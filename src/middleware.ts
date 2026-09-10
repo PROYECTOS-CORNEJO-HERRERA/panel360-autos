@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const authCookieName = "aca_session";
-const publicPrefixes = ["/login", "/recuperar-clave"];
+// /api/acceso-panel360 es la entrada desde Panel360 (bloque S.058): tiene
+// que ser publica porque justamente su trabajo es crear la sesion. No
+// valida con la cookie sino con un token firmado de corta vida.
+const publicPrefixes = ["/login", "/recuperar-clave", "/api/acceso-panel360"];
 
 function getAuthSecret() {
   const secret = process.env.AUTH_SECRET;
