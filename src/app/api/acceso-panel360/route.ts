@@ -85,7 +85,10 @@ export async function GET(request: NextRequest) {
     role: usuario.role
   });
 
-  const respuesta = NextResponse.redirect(new URL("/", request.url));
+  // "?bienvenido" es lo que dispara la intro del vehiculo (ver
+  // src/app/page.tsx). El login normal la agrega; al entrar desde
+  // Panel360 hay que agregarla igual, si no se entra sin el efecto.
+  const respuesta = NextResponse.redirect(new URL("/?bienvenido=1", request.url));
   respuesta.cookies.set({
     name: authCookieName,
     value: sesion,
