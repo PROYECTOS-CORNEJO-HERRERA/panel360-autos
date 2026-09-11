@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  TrendingUp,
   BadgeDollarSign,
   Bell,
   BookOpen,
@@ -89,6 +90,7 @@ const navSections: NavSection[] = [
   {
     title: "INTELIGENCIA COMERCIAL",
     items: [
+      { href: "/cambios", label: "¿Qué cambió este mes?", icon: TrendingUp },
       { href: "/actualizaciones", label: "Actualización Comercial", icon: Bell },
       { href: "/ayudas-comerciales", label: "Acciones Comerciales", icon: BadgeDollarSign },
       { href: "/historial-precios", label: "Listas de Precios", icon: History },
