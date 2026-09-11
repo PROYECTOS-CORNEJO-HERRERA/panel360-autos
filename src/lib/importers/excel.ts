@@ -351,15 +351,68 @@ function parseSheetCampana(
 
 // ─── Parser principal ─────────────────────────────────────────────────────────
 
+/**
+ * Encuentra en que fila esta el encabezado de verdad (Bloque C).
+ *
+ * Las listas de las marcas casi nunca empiezan en la fila 1: arriba
+ * traen logo, titulo ("LISTA DE PRECIOS SEPTIEMBRE 2026"), la marca,
+ * filas en blanco. Al asumir que el encabezado era la primera fila, el
+ * importador terminaba con nombres de columna como
+ * "LISTA DE PRECIOS SEPTIEMBRE 2026", "_1", "_2" -- y como ninguna se
+ * parecia a "precio lista" o "modelo", NO DETECTABA NINGUN PRECIO.
+ * Ese era el motivo real de que las listas reales no se pudieran
+ * cargar.
+ *
+ * Se busca la fila que mas se parezca a un encabezado: la que tenga
+ * mas celdas de texto reconocibles como columnas de una lista de
+ * precios. Si ninguna califica, se usa la 0 (comportamiento anterior).
+ */
+const PALABRAS_ENCABEZADO = [
+  "modelo", "version", "variante", "trim", "precio", "lista", "contado",
+  "financiamiento", "credito", "bono", "descuento", "marca", "codigo",
+  "sap", "cit", "neto", "iva", "total", "campana", "tasa",
+];
+
+export function detectarFilaEncabezado(sheet: XLSX.WorkSheet, maxFilas = 25): number {
+  const matriz = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: true });
+
+  let mejorFila = 0;
+  let mejorPuntaje = 0;
+
+  for (let i = 0; i < Math.min(matriz.length, maxFilas); i++) {
+    const celdas = (matriz[i] ?? []).map((c) => norm(valueToString(c)));
+    const conTexto = celdas.filter((c) => c.length > 0);
+    if (conTexto.length < 2) continue;
+
+    // Cuantas celdas de esta fila suenan a nombre de columna.
+    const aciertos = conTexto.filter((celda) =>
+      PALABRAS_ENCABEZADO.some((palabra) => celda.includes(palabra))
+    ).length;
+
+    // Se exige mas de un acierto: una fila con un solo "precio" suelto
+    // suele ser un titulo, no un encabezado.
+    if (aciertos >= 2 && aciertos > mejorPuntaje) {
+      mejorPuntaje = aciertos;
+      mejorFila = i;
+    }
+  }
+
+  return mejorFila;
+}
+
 export async function parseExcel(buffer: Buffer): Promise<ImportResult> {
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  // cellStyles y sheetStubs: leer el archivo completo, incluidas las
+  // celdas vacias y la metadata de filas/columnas ocultas. (Las filas
+  // ocultas ya se leian: SheetJS parsea el XML, no lo que se ve.)
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, cellStyles: true, sheetStubs: true });
   const textParts: string[] = [];
   const changes: DetectedChange[] = [];
   const sheetSummaries: string[] = [];
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const filaEncabezado = detectarFilaEncabezado(sheet);
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: filaEncabezado });
     const csvText = XLSX.utils.sheet_to_csv(sheet);
     textParts.push(`=== Hoja: ${sheetName} ===\n${csvText}`);
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { INFO_STATUS } from "@/lib/constants";
+import { aprobarItemComoPrecio } from "@/lib/importers/aprobar-precios";
 import { parseMoney } from "@/lib/format";
 import { parseTextUpdate } from "@/lib/importers/text";
 import { prisma } from "@/lib/prisma";
@@ -300,8 +301,68 @@ export async function validateUpdateItem(formData: FormData) {
     return;
   }
 
+  // Bloque C: si la fila es un precio, aprobarla ahora SI crea el
+  // precio. Antes solo la marcaba EN_REVISION y ahi moria la cadena --
+  // por eso "no se podia cargar la lista del mes": ese camino nunca se
+  // habia terminado de construir.
+  if (item.category === "PRECIO") {
+    const resultado = await aprobarItemComoPrecio(id);
+    revalidatePath("/actualizaciones");
+    revalidatePath("/cotizador");
+    revalidatePath("/comparador");
+    revalidatePath("/rentabilidad");
+    revalidatePath("/vehiculos");
+    if (!resultado.ok) {
+      // El motivo ya quedo escrito en la fila cuando corresponde; no se
+      // lanza excepcion para no perder el resto de la pantalla.
+      return;
+    }
+    return;
+  }
+
   await prisma.updateItem.update({ where: { id }, data: { status: INFO_STATUS.IN_REVIEW } });
   revalidatePath("/actualizaciones");
+}
+
+/**
+ * Aprueba de una vez todas las filas de precio de una carga (Bloque C).
+ *
+ * Validar 500 filas de una lista mensual de a una es inviable. Las que
+ * no se puedan resolver quedan pendientes con su motivo, no se fuerzan.
+ */
+export async function aprobarPreciosDeCarga(formData: FormData) {
+  const updateId = textValue(formData, "updateId");
+  if (!updateId) return;
+
+  const items = await prisma.updateItem.findMany({
+    where: {
+      updateId,
+      category: "PRECIO",
+      status: { in: [INFO_STATUS.DETECTED, INFO_STATUS.IN_REVIEW] },
+    },
+  });
+
+  let aprobados = 0;
+  let pendientes = 0;
+  for (const item of items) {
+    const resultado = await aprobarItemComoPrecio(item.id);
+    if (resultado.ok) aprobados++;
+    else pendientes++;
+  }
+
+  await prisma.update.update({
+    where: { id: updateId },
+    data: {
+      status: pendientes === 0 ? INFO_STATUS.ACTIVE : INFO_STATUS.IN_REVIEW,
+      approvedAt: new Date(),
+    },
+  });
+
+  revalidatePath("/actualizaciones");
+  revalidatePath("/cotizador");
+  revalidatePath("/comparador");
+  revalidatePath("/rentabilidad");
+  revalidatePath("/vehiculos");
 }
 
 export async function createCustomer(formData: FormData) {

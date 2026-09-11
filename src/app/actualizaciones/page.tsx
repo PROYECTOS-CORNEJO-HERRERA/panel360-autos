@@ -1,5 +1,5 @@
 import { ClipboardPaste, FileUp } from "lucide-react";
-import { ignoreUpdateItem, pasteCommercialUpdate, validateUpdateItem } from "@/lib/actions";
+import { aprobarPreciosDeCarga, ignoreUpdateItem, pasteCommercialUpdate, validateUpdateItem } from "@/lib/actions";
 import { formatDateTime, formatCLP } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { EmptyState, Notice, PageHeader, Panel, StatusPill } from "@/components/ui";
@@ -88,7 +88,24 @@ export default async function UpdatesPage() {
                       {update.sourceType} · {formatDateTime(update.createdAt)} · Estado: {update.status}
                     </p>
                   </div>
-                  <StatusPill>{update.items.length} detectados</StatusPill>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill>{update.items.length} detectados</StatusPill>
+                    {/* Bloque C: aprobar las filas de precio de una vez.
+                        Validar 500 filas de a una es inviable. Las que no
+                        se puedan resolver quedan pendientes con su motivo,
+                        no se fuerzan. */}
+                    {update.items.some((item) => item.category === "PRECIO" && item.status !== "VIGENTE") && (
+                      <form action={aprobarPreciosDeCarga}>
+                        <input type="hidden" name="updateId" value={update.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg bg-ink px-3 py-2 text-xs font-black uppercase text-white hover:bg-graphite"
+                        >
+                          Aprobar {update.items.filter((i) => i.category === "PRECIO" && i.status !== "VIGENTE").length} precios
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-4 overflow-x-auto">
                   {update.items.length ? (
