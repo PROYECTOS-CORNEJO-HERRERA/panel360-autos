@@ -1,5 +1,6 @@
-import { mesComercialActual } from "@/lib/mes-comercial";
+import { mesComercialActual, nombreMesComercial } from "@/lib/mes-comercial";
 import { INFO_STATUS } from "@/lib/constants";
+import { prisma } from "@/lib/prisma";
 
 // ============================================================
 // FUENTE UNICA DE VERDAD SOBRE QUE PRECIO SE PUEDE MOSTRAR
@@ -57,6 +58,75 @@ export function wherePrecioDelMes(mes: string) {
  *  ejecutivo por defecto en cotizador, comparador y rentabilidad. */
 export function wherePrecioVigenteActual() {
   return wherePrecioDelMes(mesComercialActual());
+}
+
+export type MesEnUso = {
+  /** El mes cuyos precios se estan mostrando. */
+  mes: string;
+  /** El mes comercial en curso segun el calendario. */
+  mesActual: string;
+  /** true si se esta mostrando un mes que ya paso. */
+  esDesactualizado: boolean;
+  /** Texto para mostrar en pantalla cuando esta desactualizado. */
+  aviso: string | null;
+};
+
+/**
+ * Decide QUE MES mostrar, y si hay que avisar (Bloque B).
+ *
+ * El caso real: llego septiembre y la lista de septiembre todavia no se
+ * carga. Hay tres salidas posibles y ninguna es obvia:
+ *
+ *   1. Mostrar agosto como si fuera vigente -> la interfaz miente: el
+ *      ejecutivo cotiza con precios del mes pasado sin saberlo. Es lo
+ *      que hacia el sistema hasta ahora.
+ *   2. Filtrar estricto por septiembre -> pantallas en blanco.
+ *   3. Mostrar el ultimo mes que exista, DICIENDO que es de otro mes.
+ *
+ * Se elige la 3. Un ejecutivo con precios de agosto y un aviso claro
+ * puede trabajar y sabe que debe confirmar; uno con la pantalla vacia
+ * no puede hacer nada, y uno con precios viejos sin aviso cotiza mal
+ * sin enterarse.
+ *
+ * @param mesesConPrecios meses que tienen precios VIGENTE, de mas
+ *        nuevo a mas antiguo (lo resuelve quien llama, con una
+ *        consulta agrupada).
+ */
+export function resolverMesEnUso(mesesConPrecios: string[], ahora = new Date()): MesEnUso {
+  const mesActual = mesComercialActual(ahora);
+
+  if (mesesConPrecios.includes(mesActual)) {
+    return { mes: mesActual, mesActual, esDesactualizado: false, aviso: null };
+  }
+
+  const masReciente = [...mesesConPrecios].sort().reverse()[0];
+
+  if (!masReciente) {
+    return {
+      mes: mesActual,
+      mesActual,
+      esDesactualizado: false,
+      aviso: "No hay listas de precios cargadas en el sistema.",
+    };
+  }
+
+  return {
+    mes: masReciente,
+    mesActual,
+    esDesactualizado: true,
+    aviso: `Estás viendo la lista de ${nombreMesComercial(masReciente)}. La lista de ${nombreMesComercial(mesActual)} todavía no se ha cargado — confirma los valores antes de comprometerlos con un cliente.`,
+  };
+}
+
+/** Los meses que tienen precios vigentes, del mas nuevo al mas antiguo. */
+export async function mesesConPrecios(): Promise<string[]> {
+  const filas = await prisma.price.findMany({
+    where: wherePrecioVigente,
+    select: { mesComercial: true },
+    distinct: ["mesComercial"],
+    orderBy: { mesComercial: "desc" },
+  });
+  return filas.map((f) => f.mesComercial).filter((m): m is string => Boolean(m));
 }
 
 /**

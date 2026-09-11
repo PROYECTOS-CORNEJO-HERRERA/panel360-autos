@@ -1,5 +1,7 @@
 import { CompareClient } from "@/components/compare-client";
 import { PageHeader } from "@/components/ui";
+import { mesesConPrecios, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { AvisoMes } from "@/components/aviso-mes";
 import { getCommercialAidAlerts } from "@/lib/commercial-aids";
 import { prisma } from "@/lib/prisma";
 
@@ -12,12 +14,15 @@ function selectedVersions(searchParams?: Record<string, string | string[] | unde
 }
 
 export default async function ComparePage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
+  // Bloque B: que mes se esta mostrando, y si hay que avisarlo.
+  const mesEnUso = resolverMesEnUso(await mesesConPrecios());
+
   const [versions, commercialAidAlerts] = await Promise.all([
     prisma.version.findMany({
       include: {
         brand: true,
         model: true,
-        prices: { where: { status: "VIGENTE" }, orderBy: { effectiveFrom: "desc" } }
+        prices: { where: wherePrecioDelMes(mesEnUso.mes), orderBy: { effectiveFrom: "desc" } }
       },
       orderBy: [{ brand: { name: "asc" } }, { model: { name: "asc" } }, { commercialOrder: "asc" }, { name: "asc" }]
     }),
@@ -42,6 +47,7 @@ export default async function ComparePage({ searchParams }: { searchParams?: Rec
         title="Comparador"
         description="Compara hasta 3 versiones con precio lista, precio final campana, ahorro, CIT, equipamiento y alertas comerciales detectadas."
       />
+      <AvisoMes mesEnUso={mesEnUso} />
       <CompareClient versions={versions} initialSelected={selectedVersions(searchParams)} commercialAids={aids} />
     </div>
   );

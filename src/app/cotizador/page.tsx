@@ -3,6 +3,8 @@ import { EmptyState, Notice, PageHeader, Panel } from "@/components/ui";
 import { formatCLP } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
+import { mesesConPrecios, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { AvisoMes } from "@/components/aviso-mes";
 export const dynamic = "force-dynamic";
 
 function searchValue(value?: string | string[]) {
@@ -22,9 +24,20 @@ function todayInChile() {
 }
 
 export default async function QuotePage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
+  // Bloque B: se resuelve primero QUE MES se esta mostrando. Si la
+  // lista del mes en curso no se ha cargado, se muestra la ultima
+  // disponible pero avisandolo en pantalla -- no se hace pasar por
+  // vigente.
+  const meses = await mesesConPrecios();
+  const mesEnUso = resolverMesEnUso(meses);
+
   const [versions, customers, quotes] = await Promise.all([
     prisma.version.findMany({
-      include: { brand: true, model: true, prices: { where: { status: "VIGENTE" }, orderBy: { effectiveFrom: "desc" } } },
+      include: {
+        brand: true,
+        model: true,
+        prices: { where: wherePrecioDelMes(mesEnUso.mes), orderBy: { effectiveFrom: "desc" } },
+      },
       orderBy: [{ brand: { name: "asc" } }, { model: { name: "asc" } }, { commercialOrder: "asc" }, { name: "asc" }]
     }),
     prisma.customer.findMany({ orderBy: { updatedAt: "desc" }, take: 50 }),
@@ -72,6 +85,9 @@ export default async function QuotePage({ searchParams }: { searchParams?: Recor
     <div className="grid gap-6">
       <div className="no-print grid gap-6">
         <PageHeader title="Cotizador" description="Cotiza el auto y arma en paralelo la hoja de rentabilidad con el mismo vehiculo, cliente y descuento." />
+
+        <AvisoMes mesEnUso={mesEnUso} />
+
         <Notice>
           Al seleccionar una version se precarga precio, Codigo CIT y precio venta con IVA. Desde la misma hoja puedes consultar permiso de circulacion, calcular Imp. Fuentes Movs., imprimir o enviar por correo.
         </Notice>
