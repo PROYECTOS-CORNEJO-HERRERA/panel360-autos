@@ -1,3 +1,5 @@
+import { INFO_STATUS } from "@/lib/constants";
+
 export type CommercialScenario = {
   key: "LISTA" | "CONTADO" | "FINANCING" | "FINANCIAMIENTO" | "CAMPAIGN" | "DERCO_CL" | "PREVENTA";
   label: string;
@@ -186,7 +188,12 @@ export function evaluateCommercialOffers(params: {
   } = params;
 
   // Active prices filtering
-  const activePrices = prices.filter((p) => p.status !== "IGNORADO" && p.status !== "REEMPLAZADO");
+  // Bloque A: el motor aceptaba cualquier estado salvo IGNORADO y
+  // REEMPLAZADO, o sea tambien DETECTADO (leido de un documento, sin
+  // aprobar). Como de aca salen el cotizador, el comparador y la hoja
+  // de rentabilidad, un precio sin validar terminaba frente al cliente.
+  // Ahora solo VIGENTE, igual que el resto. Ver src/lib/precios.ts.
+  const activePrices = prices.filter((p) => p.status === INFO_STATUS.ACTIVE);
 
   const listPriceObj = latestPrice(activePrices, (p) => p.priceType === "LIST" && isRegularChannel(p));
   const campaignPriceObj = latestPrice(activePrices, (p) => p.priceType === "CAMPAIGN" && isRegularChannel(p));

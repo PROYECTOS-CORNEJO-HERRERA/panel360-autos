@@ -1,5 +1,6 @@
 import { PageHeader, Panel, StatusPill } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
+import { wherePrecioVigente } from "@/lib/precios";
 import { prisma } from "@/lib/prisma";
 import { CheckCircle2, AlertCircle, Clock, TrendingUp } from "lucide-react";
 
@@ -27,8 +28,12 @@ function getBrandStatus(
 
 export default async function PlanComercialPage() {
   const [brands, prices, campaigns, commercialOffers] = await Promise.all([
-    prisma.brand.findMany({ orderBy: { name: "asc" }, include: { models: { include: { versions: { include: { prices: { take: 1, orderBy: { effectiveFrom: "desc" } }, campaigns: { take: 1, orderBy: { createdAt: "desc" } } } } } } } }),
-    prisma.price.findMany({ where: { status: { in: ["VIGENTE", "DETECTADO"] } }, orderBy: { effectiveFrom: "desc" } }),
+    // Bloque A: las dos consultas de precios usan el criterio unico.
+    // La primera no filtraba por estado en absoluto (tomaba el mas
+    // reciente, aunque estuviera REEMPLAZADO o IGNORADO) y la segunda
+    // aceptaba DETECTADO. Ver src/lib/precios.ts.
+    prisma.brand.findMany({ orderBy: { name: "asc" }, include: { models: { include: { versions: { include: { prices: { take: 1, where: wherePrecioVigente, orderBy: { effectiveFrom: "desc" } }, campaigns: { take: 1, orderBy: { createdAt: "desc" } } } } } } } }),
+    prisma.price.findMany({ where: wherePrecioVigente, orderBy: { effectiveFrom: "desc" } }),
     prisma.commercialCampaign.findMany({ where: { status: { in: ["VIGENTE", "DETECTADO", "APROBADO"] } }, orderBy: { createdAt: "desc" } }),
     prisma.commercialOffer.findMany({ where: { status: { in: ["VIGENTE", "DETECTADO", "APROBADO"] } } })
   ]);

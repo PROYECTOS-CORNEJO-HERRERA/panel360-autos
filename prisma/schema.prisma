@@ -140,6 +140,12 @@ model Price {
   hasIva        Boolean        @default(false)       // true = el monto es +IVA (sin incluir)
   effectiveFrom DateTime       @default(now())
   effectiveTo   DateTime?
+  // Bloque B: periodo comercial al que pertenece este precio, "AAAA-MM"
+  // (ej. "2026-09"). En automotriz la lista rige por mes: la de agosto
+  // deja de valer cuando empieza septiembre, aunque nadie la desactive.
+  // Es texto y no fecha a proposito: es una etiqueta de periodo, no un
+  // instante. Ver src/lib/mes-comercial.ts.
+  mesComercial  String?
   status        String         @default("DETECTADO")
   sourceId      String?
   documentId    String?
@@ -153,6 +159,8 @@ model Price {
 
   @@index([versionId, priceType, status])
   @@index([versionId, channel])
+  @@index([mesComercial])
+  @@index([versionId, mesComercial])
   @@map("prices")
 }
 
@@ -671,7 +679,11 @@ model CommercialOffer {
   /// Trazabilidad de origen
   sourceDocumentId String?
   sheetName        String?   // hoja del Excel de origen, ej: "Bono Cierre Compartido"
-  sourceMonth      String?   // ej: "agosto 2026"
+  sourceMonth      String?   // texto libre tal como venia en el documento, ej: "agosto 2026"
+  // Bloque B: el mismo mes en formato normalizado "AAAA-MM", que es el
+  // que se puede filtrar y ordenar. `sourceMonth` existia desde antes
+  // pero ningun codigo lo leia ni lo escribia.
+  mesComercialNormalizado String?
   /// Estado del ciclo de vida
   status           String    @default("VIGENTE") // VIGENTE | FINALIZADA | BORRADOR | SUSPENDIDA
   createdAt        DateTime  @default(now())

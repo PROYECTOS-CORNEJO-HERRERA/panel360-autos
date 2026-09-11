@@ -16,6 +16,7 @@ import {
 import { saveClientProfile } from "@/lib/actions";
 import { commercialAidMatchesVehicle, getCommercialAidAlerts, type CommercialAidAlert } from "@/lib/commercial-aids";
 import { formatCLP, missing, normalizeText, parseMoney } from "@/lib/format";
+import { includePreciosVigentes } from "@/lib/precios";
 import { getPricingBreakdown } from "@/lib/pricing-breakdown";
 import { prisma } from "@/lib/prisma";
 import { EmptyState, Notice, PageHeader, Panel, StatusPill } from "@/components/ui";
@@ -100,9 +101,14 @@ export default async function ClientInFrontPage({ searchParams }: { searchParams
       include: {
         brand: true,
         model: true,
+        // Bloque A: solo precios VIGENTE, como el resto del sistema.
+        // Antes aceptaba tambien DETECTADO y ademas ordenaba por status
+        // ascendente -- y como "DETECTADO" va antes que "VIGENTE"
+        // alfabeticamente, cuando existian los dos el perfilador
+        // PREFERIA el precio sin validar. Ver src/lib/precios.ts.
         prices: {
-          where: { status: { in: ["VIGENTE", "DETECTADO"] } },
-          orderBy: [{ status: "asc" }, { effectiveFrom: "desc" }]
+          ...includePreciosVigentes,
+          orderBy: [{ effectiveFrom: "desc" }]
         }
       },
       orderBy: [{ brand: { name: "asc" } }, { model: { name: "asc" } }, { commercialOrder: "asc" }, { name: "asc" }]

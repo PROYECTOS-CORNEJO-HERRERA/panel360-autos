@@ -1,5 +1,6 @@
 import { readStoredDocument } from "@/lib/document-storage";
 import { prisma } from "@/lib/prisma";
+import { wherePrecioVigente } from "@/lib/precios";
 import { sanitizeFilename } from "@/lib/safe-paths";
 import { formatCLP } from "@/lib/format";
 import { getPricingBreakdown } from "@/lib/pricing-breakdown";
@@ -45,7 +46,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         },
         versions: {
           include: {
-            prices: { where: { status: { in: ["VIGENTE", "DETECTADO"] } } }
+            prices: { where: wherePrecioVigente }
           }
         }
       }
