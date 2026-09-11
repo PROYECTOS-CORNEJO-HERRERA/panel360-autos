@@ -1,4 +1,5 @@
 import { compararMeses, ETIQUETA_TIPO, type TipoCambio } from "@/lib/comparacion-meses";
+import { obtenerEstadoDerco, diferenciasConDerco } from "@/lib/derco/estado";
 import { formatCLP } from "@/lib/format";
 import { EmptyState, PageHeader, Panel, StatusPill } from "@/components/ui";
 
@@ -43,7 +44,11 @@ export default async function CambiosPage({
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const resumen = await compararMeses();
+  const [resumen, estadoDerco, diferenciasDerco] = await Promise.all([
+    compararMeses(),
+    obtenerEstadoDerco(),
+    diferenciasConDerco(),
+  ]);
   const filtro = filtroActivo(searchParams);
 
   const visibles = filtro === "TODOS" ? resumen.cambios : resumen.cambios.filter((c) => c.tipo === filtro);
@@ -64,6 +69,57 @@ export default async function CambiosPage({
         title="¿Qué cambió este mes?"
         description={`${resumen.nombreMesActual} comparado con ${resumen.nombreMesAnterior}, versión por versión.`}
       />
+
+      {/* Bloque E: precio interno vs precio publicado en derco.cl. El
+          cliente llega habiendo visto la web, asi que el ejecutivo
+          necesita saber si difieren ANTES de comprometer un precio. */}
+      <Panel>
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-ink">Precios publicados en derco.cl</h2>
+            <p className="text-xs font-semibold text-steel">{estadoDerco.descripcion}</p>
+          </div>
+          <StatusPill tone={diferenciasDerco.length > 0 ? "warn" : "good"}>
+            {estadoDerco.preciosGuardados === 0
+              ? "Sin datos"
+              : `${diferenciasDerco.length} diferencias`}
+          </StatusPill>
+        </div>
+
+        {diferenciasDerco.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="data-table min-w-[700px]">
+              <thead>
+                <tr>
+                  <th>Vehículo</th>
+                  <th>Precio interno</th>
+                  <th>Publicado en derco.cl</th>
+                  <th>Diferencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diferenciasDerco.slice(0, 30).map((d) => (
+                  <tr key={d.versionId}>
+                    <td>
+                      <p className="font-black text-ink">
+                        {d.marca} {d.modelo}
+                      </p>
+                      <p className="text-xs font-semibold text-steel">{d.version}</p>
+                    </td>
+                    <td className="font-semibold text-graphite">{formatCLP(d.precioInterno)}</td>
+                    <td className="font-black text-ink">{formatCLP(d.precioDerco)}</td>
+                    <td className={`font-black ${d.diferencia > 0 ? "text-red-700" : "text-emerald-700"}`}>
+                      {d.diferencia > 0 ? "+" : ""}
+                      {formatCLP(d.diferencia)} ({d.variacionPct > 0 ? "+" : ""}
+                      {d.variacionPct.toFixed(1)}%)
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
       {resumen.sinComparacion ? (
         // Sin datos del mes anterior no se inventa una comparacion: 165

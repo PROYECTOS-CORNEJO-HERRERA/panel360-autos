@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { INFO_STATUS } from "../src/lib/constants";
+import { mesComercialActual } from "../src/lib/mes-comercial";
 import { parseMoney } from "../src/lib/format";
 import { prisma } from "../src/lib/prisma";
 import { assertInsideWorkspace, sanitizeFilename } from "../src/lib/safe-paths";
@@ -272,16 +273,29 @@ async function saveDercoDocument(sourceUrl: string, brandName: string, filename:
   });
 }
 
+// Canal propio para lo publicado en derco.cl.
+//
+// ANTES ESTO ERA UN BUG: los precios de Derco entraban como
+// priceType LIST en el canal REGULAR, o sea EN EL MISMO CARRIL que la
+// lista interna, distinguidos solo por documentId. El motor de precios
+// toma "el LIST mas reciente del canal REGULAR", asi que correr este
+// script pisaba el precio de lista interno con el publicado en la web
+// -- y nadie podia notarlo, porque el numero se veia normal.
+//
+// Con canal propio los dos conviven y se pueden comparar, que es
+// justamente lo que se quiere ver: precio interno vs precio publicado.
+const CANAL_DERCO = "DERCO_CL";
+
 async function upsertPrice(versionId: string, priceType: string, amount: number | null, documentId: string, sourceName: string) {
   if (!amount) return false;
 
   const existingSame = await prisma.price.findFirst({
-    where: { versionId, priceType, amount, status: INFO_STATUS.ACTIVE, documentId }
+    where: { versionId, priceType, amount, status: INFO_STATUS.ACTIVE, channel: CANAL_DERCO }
   });
   if (existingSame) return false;
 
   const previousDerco = await prisma.price.findFirst({
-    where: { versionId, priceType, status: INFO_STATUS.ACTIVE, documentId },
+    where: { versionId, priceType, status: INFO_STATUS.ACTIVE, channel: CANAL_DERCO },
     orderBy: { effectiveFrom: "desc" }
   });
 
@@ -297,6 +311,8 @@ async function upsertPrice(versionId: string, priceType: string, amount: number 
       versionId,
       priceType,
       amount,
+      channel: CANAL_DERCO,
+      mesComercial: mesComercialActual(),
       status: INFO_STATUS.ACTIVE,
       documentId,
       approvedBy: "Derco público"
