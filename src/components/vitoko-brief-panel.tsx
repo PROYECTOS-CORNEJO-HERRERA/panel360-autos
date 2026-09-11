@@ -22,7 +22,7 @@ export function VitokoBriefPanel({ brief }: { brief: VitokoBrief }) {
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-xs font-black uppercase text-copper dark:text-amber-400">
             <Bot className="h-4 w-4" aria-hidden="true" />
-            Vitoko IA
+            Asistente IA 360
           </p>
           <h2 className="mt-1 text-2xl font-black text-ink dark:text-white">{brief.headline}</h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-steel dark:text-slate-300">{brief.summary}</p>

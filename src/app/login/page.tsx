@@ -36,7 +36,7 @@ export default function LoginPage({ searchParams }: { searchParams: Record<strin
           <p className="mt-6 text-xs font-black uppercase text-copper">Sistema privado Panel360</p>
           <h1 className="mt-2 text-4xl font-black tracking-normal text-white md:text-5xl">Asistente Comercial Automotriz</h1>
           <p className="mt-4 max-w-xl text-base font-semibold leading-7 text-slate-200">
-            Modulo independiente para ventas, clientes, cotizaciones, rentabilidad, documentos y Vitoko IA.
+            Modulo independiente para ventas, clientes, cotizaciones, rentabilidad, documentos y Asistente IA 360.
           </p>
           <div className="mt-6 grid gap-3 text-sm font-semibold text-slate-200 sm:grid-cols-2">
             <p className="rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur-sm">Datos comerciales protegidos por sesion.</p>

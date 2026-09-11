@@ -188,7 +188,7 @@ export async function getVitokoBrief(): Promise<VitokoBrief> {
       id: "commercial-review",
       agent: "Agente comercial",
       title: `${pendingItems} cambios comerciales necesitan revision`,
-      detail: "Vitoko detecto datos de documentos que conviene aprobar antes de usarlos en venta.",
+      detail: "Asistente IA 360 detecto datos de documentos que conviene aprobar antes de usarlos en venta.",
       tone: "warn",
       actions: [action("Revisar actualizaciones", "/actualizaciones", "warn")]
     });
@@ -211,7 +211,7 @@ export async function getVitokoBrief(): Promise<VitokoBrief> {
       id: "missing-cit",
       agent: "Agente de rentabilidad",
       title: `${missingCitVersions} versiones sin Codigo CIT`,
-      detail: "Ese dato es clave para impuesto verde. Vitoko lo marca para no cotizar con informacion incompleta.",
+      detail: "Ese dato es clave para impuesto verde. Asistente IA 360 lo marca para no cotizar con informacion incompleta.",
       tone: "warn",
       actions: [action("Ver vehiculos", "/vehiculos", "warn"), action("Ir a rentabilidad", "/rentabilidad", "neutral")]
     });
@@ -233,7 +233,7 @@ export async function getVitokoBrief(): Promise<VitokoBrief> {
       id: "crm-start",
       agent: "Agente CRM",
       title: "Todavia no hay clientes guardados",
-      detail: "Cuando perfiles un cliente, Vitoko puede guardar preferencia, presupuesto, credito y proxima accion.",
+      detail: "Cuando perfiles un cliente, Asistente IA 360 puede guardar preferencia, presupuesto, credito y proxima accion.",
       tone: "neutral",
       actions: [action("Crear cliente", "/clientes", "good"), action("Usar perfilador", "/cliente-frente-a-mi", "good")]
     });
@@ -243,7 +243,7 @@ export async function getVitokoBrief(): Promise<VitokoBrief> {
     id: "next-best-action",
     agent: "Agente de venta",
     title: "Perfilador express listo para la proxima atencion",
-    detail: "Ingresa presupuesto, uso y prioridad; Vitoko ordena modelos, detecta alertas y deja acciones para cotizar, comparar o evaluar credito.",
+    detail: "Ingresa presupuesto, uso y prioridad; Asistente IA 360 ordena modelos, detecta alertas y deja acciones para cotizar, comparar o evaluar credito.",
     tone: "good",
     actions: [action("Cliente frente a mi", "/cliente-frente-a-mi", "good"), action("Cotizar", "/cotizador", "neutral")]
   });
@@ -259,7 +259,7 @@ export async function getVitokoBrief(): Promise<VitokoBrief> {
   return {
     headline: renewalsNext30 > 0
       ? `${renewalsNext30} renovacion${renewalsNext30 > 1 ? "es" : ""} urgente${renewalsNext30 > 1 ? "s" : ""} — actua hoy`
-      : "Vitoko esta mirando la operacion",
+      : "Asistente IA 360 esta mirando la operacion",
     summary: summaryParts.join(" | "),
     generatedAt: now.toISOString(),
     insights: insights.slice(0, 7)
@@ -335,7 +335,7 @@ export async function askVitoko(message: string): Promise<VitokoAnswer> {
 
   if (hasAny(normalized, ["cliente", "perfilar", "perfil", "ofrecer", "familia", "presupuesto", "quiero vender"])) {
     parts.push(
-      "Para perfilar rapido, Vitoko partiria por tres datos: presupuesto maximo, uso principal y prioridad real del cliente. Con eso el perfilador ordena modelos y deja acciones para comparar, cotizar, rentabilidad o credito."
+      "Para perfilar rapido, Asistente IA 360 partiria por tres datos: presupuesto maximo, uso principal y prioridad real del cliente. Con eso el perfilador ordena modelos y deja acciones para comparar, cotizar, rentabilidad o credito."
     );
     actions.push(action("Abrir perfilador", "/cliente-frente-a-mi", "good"));
     sources.add("Perfilador express");
@@ -351,7 +351,7 @@ export async function askVitoko(message: string): Promise<VitokoAnswer> {
 
   if (hasAny(normalized, ["rentabilidad", "margen", "permiso", "circulacion", "impuesto", "verde", "cit"])) {
     parts.push(
-      "En rentabilidad, Vitoko revisa precio, Codigo CIT, permiso de circulacion e Imp. Fuentes Movs. Si falta CIT o fuente, lo marca como pendiente para no cerrar con un numero inventado."
+      "En rentabilidad, Asistente IA 360 revisa precio, Codigo CIT, permiso de circulacion e Imp. Fuentes Movs. Si falta CIT o fuente, lo marca como pendiente para no cerrar con un numero inventado."
     );
     actions.push(action("Abrir rentabilidad", "/rentabilidad", "good"));
     sources.add("Hoja de rentabilidad");
@@ -401,7 +401,7 @@ export async function askVitoko(message: string): Promise<VitokoAnswer> {
 
   if (!parts.length) {
     parts.push(
-      "Vitoko no encontro una coincidencia directa. Puedo ayudarte mejor si escribes modelo, marca, presupuesto, tipo de cliente, credito, bono o rentabilidad. Mientras tanto, partiria por el perfilador si tienes al cliente frente a ti."
+      "Asistente IA 360 no encontro una coincidencia directa. Puedo ayudarte mejor si escribes modelo, marca, presupuesto, tipo de cliente, credito, bono o rentabilidad. Mientras tanto, partiria por el perfilador si tienes al cliente frente a ti."
     );
     actions.push(action("Cliente frente a mi", "/cliente-frente-a-mi", "good"));
     actions.push(action("Buscar vehiculo", "/buscar", "neutral"));

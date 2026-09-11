@@ -70,7 +70,7 @@ export function VitokoAssistant() {
         if (!cancelled && data?.brief) setBrief(data.brief);
       })
       .catch(() => {
-        if (!cancelled) setError("Vitoko no pudo leer el resumen ahora.");
+        if (!cancelled) setError("El Asistente IA 360 no pudo leer el resumen ahora.");
       });
 
     return () => {
@@ -113,7 +113,7 @@ export function VitokoAssistant() {
         }
       ]);
     } catch {
-      setError("No pude consultar Vitoko. Reintenta en unos segundos.");
+      setError("No pude consultar el Asistente IA 360. Reintenta en unos segundos.");
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +126,7 @@ export function VitokoAssistant() {
       {isOpen && !isMinimized ? (
         <section
           role="dialog"
-          aria-label="Vitoko IA"
+          aria-label="Asistente IA 360"
           className="fixed inset-x-3 bottom-3 max-h-[calc(100vh-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:left-auto sm:right-5 sm:w-[420px]"
         >
           {/* Header */}
@@ -138,7 +138,7 @@ export function VitokoAssistant() {
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <p className="truncate text-sm font-black">Vitoko IA</p>
+                  <p className="truncate text-sm font-black">Asistente IA 360</p>
                   <span className="rounded bg-teal-500/20 px-1.5 py-0.5 text-[10px] font-extrabold text-teal-300">Mascota</span>
                 </div>
                 <p className="truncate text-xs text-slate-400">Asistente comercial & rentabilidad</p>
@@ -151,7 +151,7 @@ export function VitokoAssistant() {
                 onClick={() => setIsMinimized(true)}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                 title="Minimizar"
-                aria-label="Minimizar Vitoko"
+                aria-label="Minimizar Asistente IA 360"
               >
                 <Minus className="h-4 w-4" />
               </button>
@@ -160,7 +160,7 @@ export function VitokoAssistant() {
                 onClick={() => setIsOpen(false)}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                 title="Cerrar"
-                aria-label="Cerrar Vitoko"
+                aria-label="Cerrar Asistente IA 360"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -218,7 +218,7 @@ export function VitokoAssistant() {
               </div>
             )}
 
-            {isLoading ? <p className="text-xs font-bold text-teal-600 dark:text-teal-400">Vitoko está procesando tu consulta...</p> : null}
+            {isLoading ? <p className="text-xs font-bold text-teal-600 dark:text-teal-400">Asistente IA 360 está procesando tu consulta...</p> : null}
             {error ? <p className="rounded-xl bg-red-50 p-3 text-xs font-bold text-red-800 dark:bg-red-950/60 dark:text-red-300">{error}</p> : null}
           </div>
 
@@ -236,13 +236,13 @@ export function VitokoAssistant() {
                 onChange={(event) => setInput(event.target.value)}
                 className="input text-xs"
                 placeholder="Escribe tu consulta sobre vehículos o bonos..."
-                aria-label="Mensaje para Vitoko"
+                aria-label="Mensaje para el Asistente IA 360"
               />
               <button
                 type="submit"
                 className="btn btn-primary shrink-0 px-3"
                 disabled={isLoading || !input.trim()}
-                aria-label="Enviar a Vitoko"
+                aria-label="Enviar al Asistente IA 360"
               >
                 <Send className="h-4 w-4" />
               </button>
@@ -258,14 +258,14 @@ export function VitokoAssistant() {
             setIsMinimized(false);
           }}
           className="flex items-center gap-2.5 rounded-full border border-slate-200 bg-slate-900 px-4 py-2.5 text-left text-white shadow-xl transition-all duration-300 hover:scale-105 hover:bg-slate-800 dark:border-slate-700 dark:bg-teal-600 dark:hover:bg-teal-500"
-          aria-label="Abrir asistente Vitoko IA"
+          aria-label="Abrir Asistente IA 360"
         >
           <div className="relative flex h-7 w-7 items-center justify-center rounded-full bg-teal-400/20 text-teal-300">
             <Bot className="h-4 w-4" />
             <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-slate-900" />
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-xs font-black tracking-wide">Vitoko</span>
+            <span className="text-xs font-black tracking-wide">Asistente IA 360</span>
             <span className="text-xs">👋</span>
           </div>
           <Sparkles className="h-3.5 w-3.5 text-teal-300" />
