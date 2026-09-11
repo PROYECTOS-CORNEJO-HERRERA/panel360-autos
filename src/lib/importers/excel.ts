@@ -16,6 +16,7 @@
 
 import * as XLSX from "xlsx";
 import { CONFIDENCE } from "@/lib/constants";
+import { detectarIva } from "@/lib/importers/iva";
 import { normalizeText } from "@/lib/format";
 import { parseTextUpdate } from "@/lib/importers/text";
 import type { DetectedChange, ImportResult } from "@/lib/importers/types";
@@ -65,6 +66,21 @@ function makeGetter(entries: [string, unknown][], normalizedKeys: string[]): Row
   };
 }
 
+/**
+ * Igual que makeGetter pero devuelve tambien COMO SE LLAMABA la columna
+ * (Bloque C). Hace falta para el IVA: el titulo de la columna es la
+ * pista principal de si ese monto es neto o final ("Precio neto",
+ * "Valor + IVA", "Precio con IVA").
+ */
+function makeGetterConClave(entries: [string, unknown][], normalizedKeys: string[]) {
+  return (...candidates: string[]): { valor: unknown; clave: string } | null => {
+    const index = normalizedKeys.findIndex((key) =>
+      candidates.some((c) => key === c || key.startsWith(`${c} `) || key.includes(c))
+    );
+    return index >= 0 ? { valor: entries[index][1], clave: normalizedKeys[index] } : null;
+  };
+}
+
 // ─── Deteccion del tipo de hoja ───────────────────────────────────────────────
 
 function detectSheetKind(sheetName: string, firstRowsText: string): SheetKind {
@@ -102,7 +118,11 @@ function parseSheetPrecios(
     const modelName = valueToString(get("modelo", "model", "linea"));
     const versionName = valueToString(get("version", "variante", "trim", "descripcion sap"));
 
-    const priceList = moneyFromCell(get("precio lista", "lista", "precio de lista", "precio base", "precio oficial", "precio", "list price"));
+    // Bloque C: se guarda de QUE columna salio el precio de lista, para
+    // poder deducir si viene neto o con IVA.
+    const getCon = makeGetterConClave(entries, normalizedKeys);
+    const celdaLista = getCon("precio lista", "lista", "precio de lista", "precio base", "precio oficial", "precio", "list price");
+    const priceList = moneyFromCell(celdaLista?.valor);
     const bonusAmount = moneyFromCell(get("bonos marca", "bono marca", "bono", "descuento marca"));
     const bonusName = valueToString(get("nombre bono", "tipo bono")) || (bonusAmount ? "Bono marca" : undefined);
 
@@ -119,6 +139,12 @@ function parseSheetPrecios(
         : channel === "PREVENTA" ? "Precio Preventa"
         : "Precio lista";
 
+      const iva = detectarIva({
+        nombreColumna: celdaLista?.clave,
+        textoFila: rawText,
+        descripcionVehiculo: `${brandName} ${modelName} ${versionName}`,
+      });
+
       changes.push({
         category: "PRECIO",
         brandName: brandName || undefined,
@@ -128,9 +154,20 @@ function parseSheetPrecios(
         proposedValue: String(priceList),
         amount: priceList,
         rawText,
-        confidence: hasIdentity ? CONFIDENCE.REVIEW : CONFIDENCE.AMBIGUOUS,
-        ambiguityReason: hasIdentity ? undefined : "Fila con monto sin modelo/version identificable.",
-        payload: { channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null }
+        // Si el IVA quedo en duda, la fila entra como ambigua aunque el
+        // vehiculo este bien identificado: equivocarse en el IVA es un
+        // 19% de error, que en una camioneta son millones.
+        confidence: !hasIdentity
+          ? CONFIDENCE.AMBIGUOUS
+          : iva.confianza === "REVISAR"
+            ? CONFIDENCE.REVIEW
+            : CONFIDENCE.HIGH,
+        ambiguityReason: !hasIdentity
+          ? "Fila con monto sin modelo/version identificable."
+          : iva.confianza === "REVISAR"
+            ? iva.motivo
+            : undefined,
+        payload: { channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null, hasIva: iva.esNeto, ivaMotivo: iva.motivo, ivaConfianza: iva.confianza }
       });
     }
 

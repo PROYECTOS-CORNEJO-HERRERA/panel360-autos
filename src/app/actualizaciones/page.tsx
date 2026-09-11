@@ -3,6 +3,8 @@ import { aprobarPreciosDeCarga, ignoreUpdateItem, pasteCommercialUpdate, validat
 import { formatDateTime, formatCLP } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { EmptyState, Notice, PageHeader, Panel, StatusPill } from "@/components/ui";
+import { ResumenCargaPanel } from "@/components/resumen-carga";
+import { resumirCarga } from "@/lib/importers/resumen-carga";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +109,9 @@ export default async function UpdatesPage() {
                     )}
                   </div>
                 </div>
+                {/* Bloque C: que trae el archivo, antes de aprobarlo. */}
+                <ResumenCargaPanel resumen={resumirCarga(update.items, update.title)} />
+
                 <div className="mt-4 overflow-x-auto">
                   {update.items.length ? (
                     <table className="data-table min-w-[900px]">
