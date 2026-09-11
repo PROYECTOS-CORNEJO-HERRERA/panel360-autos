@@ -197,6 +197,59 @@ async function main() {
     }
   }
 
+  if (process.argv.includes("--sql")) {
+    const rows = matched
+      .map(({ entry, version }) => {
+        const esc = (s) => String(s).replace(/'/g, "''");
+        return `  ('${esc(version.model.name)}','${esc(version.name)}',${entry.listPrice},${entry.cashPrice},${entry.financingPrice})`;
+      })
+      .join(",\n");
+    const sql = `-- Precios DFSK Agosto 2026 (Lista / Contado / Financiamiento)
+-- Generado automaticamente. Pegar en Supabase -> SQL Editor -> Run.
+BEGIN;
+
+CREATE TEMP TABLE dfsk_src (model text, version text, list int, cash int, fin int) ON COMMIT DROP;
+INSERT INTO dfsk_src (model, version, list, cash, fin) VALUES
+${rows};
+
+-- Resolver los ids de version reales de la marca DFSK
+CREATE TEMP TABLE dfsk_match ON COMMIT DROP AS
+SELECT ver.id AS version_id, s.list, s.cash, s.fin
+FROM dfsk_src s
+JOIN brands b   ON b.name = 'DFSK'
+JOIN models m   ON m."brandId" = b.id AND lower(btrim(m.name)) = lower(btrim(s.model))
+JOIN versions ver ON ver."modelId" = m.id AND lower(btrim(ver.name)) = lower(btrim(s.version));
+
+-- Marcar como reemplazados los precios vigentes anteriores de esas versiones
+UPDATE prices p SET status = 'REEMPLAZADO', "effectiveTo" = now()
+WHERE p.status = 'VIGENTE' AND p."versionId" IN (SELECT version_id FROM dfsk_match);
+
+-- Insertar Lista / Contado / Financiamiento nuevos
+INSERT INTO prices (id, "versionId", "priceType", amount, currency, channel, "hasIva", "effectiveFrom", status, "approvedBy", "createdAt", "updatedAt")
+SELECT gen_random_uuid()::text, dm.version_id, t.ptype, t.amount, 'CLP', 'REGULAR', false, now(), 'VIGENTE', 'IMPORT_DFSK_AGOSTO_2026', now(), now()
+FROM dfsk_match dm
+CROSS JOIN LATERAL (VALUES ('LIST', dm.list), ('CASH', dm.cash), ('FINANCING', dm.fin)) AS t(ptype, amount)
+WHERE t.amount IS NOT NULL;
+
+COMMIT;
+
+-- Verificacion: debe mostrar 22 versiones con sus 3 precios
+SELECT m.name AS modelo, ver.name AS version,
+       max(amount) FILTER (WHERE "priceType"='LIST')      AS lista,
+       max(amount) FILTER (WHERE "priceType"='CASH')      AS contado,
+       max(amount) FILTER (WHERE "priceType"='FINANCING') AS financiamiento
+FROM prices p
+JOIN versions ver ON ver.id = p."versionId"
+JOIN models m ON m.id = ver."modelId"
+JOIN brands b ON b.id = m."brandId"
+WHERE b.name = 'DFSK' AND p.status = 'VIGENTE' AND p."approvedBy" = 'IMPORT_DFSK_AGOSTO_2026'
+GROUP BY m.name, ver.name
+ORDER BY m.name, ver.name;
+`;
+    console.log(sql);
+    return;
+  }
+
   if (dryRun) { console.log("\n(DRY RUN: no se escribió nada)"); return; }
 
   const document = await ensureDocument();

@@ -1,0 +1,49 @@
+-- ============================================================
+-- Agregar 3 versiones DFSK Cargo Van (gas) + precios Agosto 2026
+-- Pegar completo en Supabase -> SQL Editor -> RUN (si pregunta, "Run without RLS")
+-- ============================================================
+BEGIN;
+
+CREATE TEMP TABLE cv_src(name text, sap text, disp text, fuel text, trans text, pax text, cargo text, list int, cash int, fin int) ON COMMIT DROP;
+INSERT INTO cv_src (name, sap, disp, fuel, trans, pax, cargo, list, cash, fin) VALUES
+  ('C25 1.3','5800','1300','Gasolina','Manual','2','690',9151100,9151100,9151100),
+  ('C25 1.3 AC','5805','1300','Gasolina','Manual','2','690',10341100,10341100,10341100),
+  ('C35 1.5','5810','1500','Gasolina','Manual','2','805',11888100,11650100,11531100);
+
+-- Crear las versiones que aun no existan bajo el modelo DFSK CARGOVAN
+INSERT INTO versions (id,"brandId","modelId",name,"sapCode",displacement,"fuelType",transmission,passengers,"cargoCapacity","commercialOrder",status,"createdAt","updatedAt")
+SELECT gen_random_uuid()::text, b.id, mo.id, s.name, s.sap, s.disp, s.fuel, s.trans, s.pax, s.cargo, 0, 'VIGENTE', now(), now()
+FROM cv_src s
+JOIN brands b ON b.name='DFSK'
+JOIN models mo ON mo."brandId"=b.id AND lower(btrim(mo.name))='cargovan'
+WHERE NOT EXISTS (SELECT 1 FROM versions v2 WHERE v2."modelId"=mo.id AND lower(btrim(v2.name))=lower(btrim(s.name)));
+
+-- Resolver ids de esas versiones e insertar Lista / Contado / Financiamiento
+CREATE TEMP TABLE cv_ver ON COMMIT DROP AS
+SELECT v.id AS version_id, s.list, s.cash, s.fin
+FROM cv_src s
+JOIN brands b ON b.name='DFSK'
+JOIN models mo ON mo."brandId"=b.id AND lower(btrim(mo.name))='cargovan'
+JOIN versions v ON v."modelId"=mo.id AND lower(btrim(v.name))=lower(btrim(s.name));
+
+UPDATE prices p SET status='REEMPLAZADO', "effectiveTo"=now()
+WHERE p.status='VIGENTE' AND p."versionId" IN (SELECT version_id FROM cv_ver);
+
+INSERT INTO prices (id,"versionId","priceType",amount,currency,channel,"bonusName","bonusAmount","hasIva","effectiveFrom",status,"approvedBy","createdAt","updatedAt")
+SELECT gen_random_uuid()::text, cv.version_id, t.ptype, t.amount, 'CLP','REGULAR',NULL,NULL,false,now(),'VIGENTE','IMPORT_DFSK_AGOSTO_2026',now(),now()
+FROM cv_ver cv CROSS JOIN LATERAL (VALUES ('LIST',cv.list),('CASH',cv.cash),('FINANCING',cv.fin)) AS t(ptype,amount)
+WHERE t.amount IS NOT NULL;
+
+COMMIT;
+
+-- Verificacion: deben verse las 3 Cargo Van con sus precios
+SELECT mo.name AS modelo, v.name AS version,
+  max(amount) FILTER (WHERE p."priceType"='LIST')      AS lista,
+  max(amount) FILTER (WHERE p."priceType"='CASH')      AS contado,
+  max(amount) FILTER (WHERE p."priceType"='FINANCING') AS financiamiento
+FROM versions v
+JOIN models mo ON mo.id=v."modelId"
+JOIN brands b ON b.id=mo."brandId"
+LEFT JOIN prices p ON p."versionId"=v.id AND p.status='VIGENTE'
+WHERE b.name='DFSK' AND lower(btrim(mo.name))='cargovan'
+GROUP BY mo.name, v.name ORDER BY v.name;

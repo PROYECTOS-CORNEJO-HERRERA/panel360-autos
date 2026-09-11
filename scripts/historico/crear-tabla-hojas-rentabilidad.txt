@@ -1,0 +1,27 @@
+-- ============================================================
+-- Crea la tabla para GUARDAR las hojas de rentabilidad.
+-- Ejecutar UNA vez en Supabase -> SQL Editor -> RUN.
+-- No borra ni modifica nada existente (usa IF NOT EXISTS).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS profitability_sheets (
+  id             text PRIMARY KEY,
+  "versionId"    text,
+  "vehicleLabel" text NOT NULL,
+  "customerName" text,
+  "customerEmail" text,
+  "orderNumber"  text,
+  "internalNumber" text,
+  "invoiceDate"  text,
+  "salePrice"    integer,
+  "marginTotal"  integer,
+  data           text NOT NULL,
+  "createdBy"    text,
+  "createdAt"    timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS profitability_sheets_createdAt_idx ON profitability_sheets ("createdAt");
+
+-- Verificacion
+SELECT 'tabla creada' AS estado, count(*) AS filas FROM profitability_sheets;

@@ -15,3 +15,6 @@ documentos/
 .vercel
 
 .env*
+
+# Cache de compilacion de TypeScript: se regenera solo, no va al repo
+tsconfig.tsbuildinfo
