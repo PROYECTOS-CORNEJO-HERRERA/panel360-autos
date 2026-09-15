@@ -123,6 +123,7 @@ model Version {
   quoteItems         QuoteItem[]
   interests          CustomerInterest[]
   commercialOffers   CommercialOffer[]
+  socialPosts        SocialPost[]
 
   @@unique([modelId, name])
   @@map("versions")
@@ -714,4 +715,98 @@ model ProfitabilitySheet {
 
   @@index([createdAt])
   @@map("profitability_sheets")
+}
+
+// ============================================================
+// BLOQUE F: PUBLICACIONES A INSTAGRAM
+// ============================================================
+//
+// Se publica SOLO por la API oficial de Meta (Instagram Graph API).
+// Automatizar la app con usuario y clave (instagrapi y similares) esta
+// descartado a proposito: funciona hasta que Meta lo detecta y cierra
+// la cuenta. Una cuenta que representa a la marca no se arriesga asi.
+//
+// Consecuencias de usar la via oficial, que este modelo asume:
+//   - La cuenta debe ser Business y estar ligada a una Pagina.
+//   - Las imagenes deben estar en una URL publica: Instagram las
+//     descarga desde su servidor, no se suben por multipart.
+//   - Publicar son dos pasos (crear contenedor, luego publicarlo), y
+//     el primero puede quedar procesando varios segundos.
+//   - Hay tope de 25 publicaciones cada 24 horas por cuenta.
+
+model SocialAccount {
+  id            String   @id @default(cuid())
+  provider      String   @default("INSTAGRAM")
+  // Nombre visible, para no depender de la API solo para saber cual es.
+  username      String?
+  // ID de la cuenta Instagram Business dentro del grafo de Meta.
+  igUserId      String?
+  // Token cifrado (AES-256-GCM). Nunca en claro, ni en base ni en logs.
+  // Ver src/lib/social/secretos.ts.
+  tokenCifrado  String?
+  // Cuando caduca el token de larga duracion (~60 dias). Se renueva
+  // solo mientras se use; si nadie publica en 60 dias, muere.
+  tokenExpiraEn DateTime?
+  // Si true, ninguna publicacion sale sin aprobacion humana explicita.
+  requiereAprobacion Boolean @default(true)
+  connectedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  posts         SocialPost[]
+
+  @@unique([provider])
+  @@map("social_accounts")
+}
+
+model SocialPost {
+  id            String   @id @default(cuid())
+  accountId     String?
+  // FEED | CARRUSEL | REEL | STORY
+  formato       String   @default("FEED")
+  // BORRADOR | PENDIENTE_APROBACION | PROGRAMADO | PUBLICANDO | PUBLICADO | ERROR | CANCELADO
+  estado        String   @default("BORRADOR")
+  // Plantilla que lo origino (LANZAMIENTO | BAJA_PRECIO | STOCK | FIN_DE_MES | LIBRE)
+  plantilla     String   @default("LIBRE")
+  caption       String
+  // Vehiculo de origen, si el post nacio del catalogo. Opcional a
+  // proposito: tambien se escriben posts sueltos.
+  versionId     String?
+  // Snapshot del precio al momento de redactar. Si el precio cambia
+  // entre que se redacta y que se publica, el caption ya no dice la
+  // verdad -- por eso se guarda y se vuelve a comparar antes de salir.
+  precioSnapshot Int?
+  mesComercial  String?
+  programadoPara DateTime?
+  publicadoEn   DateTime?
+  // ID del post ya publicado en Instagram, para poder enlazarlo.
+  igMediaId     String?
+  igPermalink   String?
+  error         String?
+  intentos      Int      @default(0)
+  aprobadoPor   String?
+  aprobadoEn    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  account       SocialAccount? @relation(fields: [accountId], references: [id])
+  version       Version?       @relation(fields: [versionId], references: [id])
+  medias        SocialPostMedia[]
+
+  @@index([estado, programadoPara])
+  @@index([versionId])
+  @@map("social_posts")
+}
+
+model SocialPostMedia {
+  id        String   @id @default(cuid())
+  postId    String
+  // URL PUBLICA. Instagram descarga desde aqui; un blob privado o un
+  // localhost no sirven.
+  url       String
+  tipo      String   @default("IMAGEN") // IMAGEN | VIDEO
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+  post      SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, orden])
+  @@map("social_post_medias")
 }

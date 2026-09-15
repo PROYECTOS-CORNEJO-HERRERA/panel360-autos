@@ -21,6 +21,7 @@ import {
   Gauge,
   History,
   Info,
+  Instagram,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -99,6 +100,10 @@ const navSections: NavSection[] = [
     ]
   },
   {
+    title: "MARKETING",
+    items: [{ href: "/publicaciones", label: "Publicaciones Instagram", icon: Instagram, badge: "NUEVO" }]
+  },
+  {
     title: "CONOCIMIENTO",
     items: [{ href: "/aprender", label: "Aprender", icon: BookOpen }]
   },
@@ -107,6 +112,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/admin/importar-clientes", label: "Importar Clientes", icon: FileSpreadsheet, badge: "NUEVO" },
       { href: "/configuracion/telegram", label: "Notificaciones", icon: Settings },
+      { href: "/configuracion/instagram", label: "Instagram", icon: Instagram },
       { href: "/admin", label: "Administración", icon: Wrench }
     ]
   }
