@@ -7,6 +7,23 @@ import { sendTelegramMessage } from "@/lib/services/notifications/telegram";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Traduce lo que respondieron Telegram y Resend a un estado honesto para
+// el historial: SENT solo si algo salio de verdad, PARTIAL si un canal
+// fallo, FAILED si no llego por ninguno.
+function resumirEntrega(
+  telegram: { ok: boolean; message?: string } | null,
+  correo: { sent: boolean; reason?: string } | null
+) {
+  const canales: { ok: boolean; detalle: string }[] = [];
+  if (telegram) canales.push({ ok: telegram.ok, detalle: `Telegram: ${telegram.ok ? "ok" : telegram.message ?? "fallo"}` });
+  if (correo) canales.push({ ok: correo.sent, detalle: `Correo: ${correo.sent ? "ok" : correo.reason ?? "fallo"}` });
+
+  const entregados = canales.filter((c) => c.ok).length;
+  const status = entregados === 0 ? "FAILED" : entregados === canales.length ? "SENT" : "PARTIAL";
+  const detalle = canales.filter((c) => !c.ok).map((c) => c.detalle).join(" | ");
+  return { status, detalle };
+}
+
 const RENEWAL_THRESHOLDS = [30, 60, 90, 180]; // días antes del vencimiento (incluyendo 180 días)
 
 export async function GET(request: Request) {
@@ -39,8 +56,8 @@ export async function GET(request: Request) {
       const rut = credit.customer.rut ?? "Sin RUT";
 
       const msg = [
-        `🔄 *RENOVACIÓN EN ${days} DÍAS*`,
-        `Cliente: *${name}*`,
+        `🔄 <b>RENOVACIÓN EN ${days} DÍAS</b>`,
+        `Cliente: <b>${name}</b>`,
         `RUT: ${rut}`,
         phone ? `Teléfono: ${phone}` : "",
         email ? `Email: ${email}` : "",
@@ -51,30 +68,35 @@ export async function GET(request: Request) {
         `💡 Cotiza su renovación en Panel360 Autos`
       ].filter(Boolean).join("\n");
 
-      // Dispatch Telegram notification
-      await sendTelegramMessage(msg);
+      // El resultado del envio SI importa: antes se descartaba y el
+      // historial se escribia como "SENT" pasara lo que pasara. Con el
+      // correo mal configurado quedaba un historial lleno de avisos
+      // "enviados" que nunca llegaron a nadie.
+      const avisoTelegram = await sendTelegramMessage(msg);
+      const avisoCorreo = email
+        ? await sendCreditRenewalEmail({
+            to: email,
+            customerName: name,
+            vehicleLabel: "tu vehículo actual",
+            installmentNumber: (credit.installments ?? 36) - Math.round((days / 30)),
+            totalInstallments: credit.installments ?? 36
+          })
+        : null;
 
-      // Dispatch Resend Email if email present
-      if (email) {
-        await sendCreditRenewalEmail({
-          to: email,
-          customerName: name,
-          vehicleLabel: "tu vehículo actual",
-          installmentNumber: (credit.installments ?? 36) - Math.round((days / 30)),
-          totalInstallments: credit.installments ?? 36
-        });
-      }
+      const entrega = resumirEntrega(avisoTelegram, avisoCorreo);
 
       await prisma.notificationHistory.create({
         data: {
           channel: "telegram_and_email",
           eventType: "RENOVATION_ALERT",
-          message: msg,
-          status: "SENT"
+          message: entrega.detalle ? `${msg}
+
+[${entrega.detalle}]` : msg,
+          status: entrega.status
         }
       });
 
-      notificationsSent++;
+      if (entrega.status !== "FAILED") notificationsSent++;
       results.push(`${name} — ${days}d`);
     }
   }
@@ -95,8 +117,8 @@ export async function GET(request: Request) {
     if (bd.getMonth() + 1 === todayMonth && bd.getDate() === todayDay) {
       const name = `${c.firstName} ${c.lastName ?? ""}`.trim();
       const msg = [
-        `🎂 *CUMPLEAÑOS HOY*`,
-        `Cliente: *${name}*`,
+        `🎂 <b>CUMPLEAÑOS HOY</b>`,
+        `Cliente: <b>${name}</b>`,
         c.rut ? `RUT: ${c.rut}` : "",
         c.phone ? `Teléfono: ${c.phone}` : "",
         c.email ? `Email: ${c.email}` : "",
@@ -104,27 +126,22 @@ export async function GET(request: Request) {
         `💡 Es un momento ideal para felicitarlo y mantener la relación comercial.`
       ].filter(Boolean).join("\n");
 
-      // Telegram dispatch
-      await sendTelegramMessage(msg);
-
-      // Resend Email dispatch if customer email present
-      if (c.email) {
-        await sendBirthdayGreetingEmail({
-          to: c.email,
-          customerName: name
-        });
-      }
+      const avisoTelegram = await sendTelegramMessage(msg);
+      const avisoCorreo = c.email ? await sendBirthdayGreetingEmail({ to: c.email, customerName: name }) : null;
+      const entrega = resumirEntrega(avisoTelegram, avisoCorreo);
 
       await prisma.notificationHistory.create({
         data: {
           channel: "telegram_and_email",
           eventType: "BIRTHDAY_ALERT",
-          message: msg,
-          status: "SENT"
+          message: entrega.detalle ? `${msg}
+
+[${entrega.detalle}]` : msg,
+          status: entrega.status
         }
       });
 
-      notificationsSent++;
+      if (entrega.status !== "FAILED") notificationsSent++;
       results.push(`🎂 ${name}`);
     }
   }

@@ -219,6 +219,66 @@ export async function agregarImagen(formData: FormData) {
   return { ok: true, mensaje: "Imagen agregada." };
 }
 
+// Subir un archivo desde el computador. Antes solo se podia pegar una URL
+// https a mano, y como aprobar exige al menos una imagen, en la practica
+// no se podia publicar nada sin tener la foto ya alojada en otro lado.
+//
+// La imagen queda PUBLICA a proposito: Instagram no recibe el archivo, lo
+// descarga el desde sus servidores, asi que una URL privada no le sirve.
+const TIPOS_IMAGEN = ["image/jpeg", "image/png", "image/webp"];
+const TIPOS_VIDEO = ["video/mp4", "video/quicktime"];
+const PESO_MAXIMO = 8 * 1024 * 1024;
+
+export async function subirImagen(formData: FormData) {
+  const postId = texto(formData, "postId");
+  const archivo = formData.get("archivo");
+
+  if (!postId) return { ok: false, mensaje: "Falta la publicacion." };
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { ok: false, mensaje: "Elige un archivo para subir." };
+  }
+
+  const esVideo = TIPOS_VIDEO.includes(archivo.type);
+  if (!TIPOS_IMAGEN.includes(archivo.type) && !esVideo) {
+    return { ok: false, mensaje: "Instagram acepta JPG, PNG, WEBP o MP4." };
+  }
+  if (archivo.size > PESO_MAXIMO) {
+    return { ok: false, mensaje: "El archivo pesa mas de 8 MB. Reducelo antes de subirlo." };
+  }
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return {
+      ok: false,
+      mensaje:
+        "La subida de archivos no esta disponible en este entorno (falta el almacenamiento). Pega una URL https publica.",
+    };
+  }
+
+  const cuantas = await prisma.socialPostMedia.count({ where: { postId } });
+  if (cuantas >= 10) return { ok: false, mensaje: "Instagram acepta como maximo 10 imagenes." };
+
+  try {
+    const { put } = await import("@vercel/blob");
+    const extension = archivo.name.split(".").pop()?.toLowerCase() || (esVideo ? "mp4" : "jpg");
+    const blob = await put(`instagram/${postId}/${Date.now()}.${extension}`, archivo, {
+      access: "public",
+      contentType: archivo.type,
+    });
+
+    await prisma.socialPostMedia.create({
+      data: { postId, url: blob.url, tipo: esVideo ? "VIDEO" : "IMAGEN", orden: cuantas },
+    });
+  } catch (error) {
+    // El motivo real importa: sin el, el usuario no sabe si reintentar,
+    // cambiar el archivo o avisar que el almacenamiento esta caido.
+    const motivo = error instanceof Error ? error.message : "error desconocido";
+    return { ok: false, mensaje: `No se pudo subir el archivo: ${motivo}` };
+  }
+
+  revalidatePath(RUTA_PUBLICACIONES);
+  return { ok: true, mensaje: "Archivo subido." };
+}
+
 export async function quitarImagen(formData: FormData) {
   const mediaId = texto(formData, "mediaId");
   if (!mediaId) return;
@@ -256,18 +316,31 @@ export async function aprobarPost(formData: FormData) {
     return { ok: false, mensaje: "No se puede aprobar un post sin imagenes." };
   }
 
+  // Un post aprobado SIN fecha quedaba en PENDIENTE_APROBACION, y el cron
+  // solo procesa los PROGRAMADO: no salia nunca, aunque la pantalla
+  // prometia que saldria apenas la cuenta estuviera conectada. Aprobar
+  // sin fecha significa "sale en la proxima corrida", asi que se deja
+  // programado para ahora mismo.
+  const programadoPara = post.programadoPara ?? new Date();
+
   await prisma.socialPost.update({
     where: { id: postId },
     data: {
       aprobadoEn: new Date(),
       aprobadoPor: usuario?.name ?? usuario?.email ?? "Sistema",
-      estado: post.programadoPara ? "PROGRAMADO" : "PENDIENTE_APROBACION",
+      estado: "PROGRAMADO",
+      programadoPara,
       error: null,
     },
   });
 
   revalidatePath(RUTA_PUBLICACIONES);
-  return { ok: true, mensaje: "Aprobado." };
+  return {
+    ok: true,
+    mensaje: post.programadoPara
+      ? "Aprobado. Sale en la fecha programada."
+      : "Aprobado. Sale en la proxima corrida diaria, o puedes usar “Publicar ahora”.",
+  };
 }
 
 export async function publicarAhora(formData: FormData) {

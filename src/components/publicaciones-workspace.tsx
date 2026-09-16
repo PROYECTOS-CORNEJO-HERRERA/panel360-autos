@@ -24,6 +24,7 @@ import {
   publicarAhora,
   quitarImagen,
   regenerarCaption,
+  subirImagen,
 } from "@/lib/actions/social";
 
 export type PostEnLista = {
@@ -130,7 +131,7 @@ export function PublicacionesWorkspace({
           <div>
             <p className="font-black text-amber-900">La cuenta de Instagram todavia no esta conectada.</p>
             <p className="mt-1 text-sm font-semibold text-amber-900">
-              Puede preparar y aprobar publicaciones igual: quedan en la cola y salen apenas conecte la cuenta en{" "}
+              Puede preparar y aprobar publicaciones igual: quedan en la cola y salen en la primera corrida diaria despues de que conecte la cuenta en{" "}
               <a className="underline" href="/configuracion/instagram">
                 Configuracion &gt; Instagram
               </a>
@@ -289,6 +290,11 @@ export function PublicacionesWorkspace({
                         className="input"
                         defaultValue={post.programadoPara ? post.programadoPara.slice(0, 16) : ""}
                       />
+                      <span className="text-xs font-semibold text-steel">
+                        La revision de programados corre una vez al dia, a las 10:00 de Chile. Un post con hora
+                        anterior sale en esa corrida, no a la hora exacta. Para que salga al instante, usa
+                        &ldquo;Publicar ahora&rdquo;.
+                      </span>
                     </label>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -352,18 +358,33 @@ export function PublicacionesWorkspace({
               </div>
 
               {post.estado !== "PUBLICADO" ? (
-                <form className="mt-3 flex gap-2" onSubmit={manejar(agregarImagen)}>
-                  <input type="hidden" name="postId" value={post.id} />
-                  <input
-                    name="url"
-                    className="input flex-1"
-                    placeholder="https://..."
-                    required
-                  />
-                  <button className="btn" type="submit" disabled={pendiente}>
-                    <ImagePlus className="h-4 w-4" /> Agregar
-                  </button>
-                </form>
+                <div className="mt-3 grid gap-2">
+                  <form className="flex flex-wrap gap-2" onSubmit={manejar(subirImagen)}>
+                    <input type="hidden" name="postId" value={post.id} />
+                    <input
+                      type="file"
+                      name="archivo"
+                      accept="image/jpeg,image/png,image/webp,video/mp4"
+                      className="input flex-1"
+                      required
+                    />
+                    <button className="btn btn-primary" type="submit" disabled={pendiente}>
+                      <ImagePlus className="h-4 w-4" /> Subir archivo
+                    </button>
+                  </form>
+                  <form className="flex gap-2" onSubmit={manejar(agregarImagen)}>
+                    <input type="hidden" name="postId" value={post.id} />
+                    <input
+                      name="url"
+                      className="input flex-1"
+                      placeholder="...o pega una URL https publica"
+                      required
+                    />
+                    <button className="btn" type="submit" disabled={pendiente}>
+                      Agregar URL
+                    </button>
+                  </form>
+                </div>
               ) : null}
             </Panel>
 

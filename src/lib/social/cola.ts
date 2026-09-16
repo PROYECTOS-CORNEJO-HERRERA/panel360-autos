@@ -110,10 +110,16 @@ export async function publicarPost(postId: string, opciones?: { forzadoPorUsuari
   // Guarda 3: tope de Meta.
   const publicadosHoy = await publicacionesUltimas24h();
   if (publicadosHoy >= TOPE_DIARIO_META) {
-    const mensaje = `Se alcanzo el tope de Instagram: ${TOPE_DIARIO_META} publicaciones en 24 horas. Esta queda en espera.`;
+    const mensaje = `Se alcanzo el tope de Instagram: ${TOPE_DIARIO_META} publicaciones en 24 horas. Esta queda en espera y sale en la proxima corrida.`;
+    // OJO: hay que dejar `programadoPara` escrito. El cron busca
+    // `{ estado: "PROGRAMADO", programadoPara: { lte: ahora } }`, y esa
+    // condicion NO incluye los nulos: un post devuelto a la cola sin
+    // fecha quedaba huerfano para siempre, en espera eterna y sin error
+    // visible. Se le pone la hora actual para que la proxima corrida lo
+    // tome de inmediato.
     await prisma.socialPost.update({
       where: { id: post.id },
-      data: { estado: "PROGRAMADO", error: mensaje },
+      data: { estado: "PROGRAMADO", programadoPara: post.programadoPara ?? new Date(), error: mensaje },
     });
     return { ok: false, mensaje };
   }
