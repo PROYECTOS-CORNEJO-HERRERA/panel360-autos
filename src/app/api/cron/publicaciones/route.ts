@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verificarCron } from "@/lib/cron-auth";
 import { procesarProgramados } from "@/lib/social/cola";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,8 @@ export const runtime = "nodejs";
 // al dia siguiente a las 10:00. Para recuperar la granularidad por hora
 // hay que pasar al plan Pro.
 export async function GET(request: Request) {
-  const authHeader = request.headers.get("Authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const noAutorizado = verificarCron(request);
+  if (noAutorizado) return noAutorizado;
 
   const resultados = await procesarProgramados();
 

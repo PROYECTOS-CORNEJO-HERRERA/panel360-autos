@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verificarCron } from "@/lib/cron-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBirthdayGreetingEmail, sendCreditRenewalEmail } from "@/lib/services/email";
 import { sendTelegramMessage } from "@/lib/services/notifications/telegram";
@@ -9,12 +10,8 @@ export const runtime = "nodejs";
 const RENEWAL_THRESHOLDS = [30, 60, 90, 180]; // días antes del vencimiento (incluyendo 180 días)
 
 export async function GET(request: Request) {
-  // Validate cron secret to prevent unauthorized invocations
-  const authHeader = request.headers.get("Authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const noAutorizado = verificarCron(request);
+  if (noAutorizado) return noAutorizado;
 
   const today = new Date();
   const results: string[] = [];
