@@ -240,13 +240,23 @@ function SummaryLine({ label, value, strong = false }: { label: string; value: n
 
 type PrintRow = { label: string; value: number | string; neto?: number; strong?: boolean };
 
-function PrintTable({ title, rows, showNeto = false }: { title: string; rows: PrintRow[]; showNeto?: boolean }) {
+function PrintTable({
+  title,
+  rows,
+  showNeto = false,
+  amountLabel
+}: {
+  title: string;
+  rows: PrintRow[];
+  showNeto?: boolean;
+  amountLabel?: string;
+}) {
   return (
     <table className="pr-table">
       <thead>
         <tr>
           <th>{title}</th>
-          <th className="pr-amount">Bruto</th>
+          <th className="pr-amount">{amountLabel ?? (showNeto ? "Bruto" : "Monto")}</th>
           {showNeto ? <th className="pr-amount">Neto</th> : null}
         </tr>
       </thead>
@@ -261,6 +271,34 @@ function PrintTable({ title, rows, showNeto = false }: { title: string; rows: Pr
       </tbody>
     </table>
   );
+}
+
+const pctText = (value: number) => `${value.toFixed(1)}%`;
+
+// Etiquetas legibles de los precios de origen (los que vienen de la lista cargada).
+const ETIQUETA_PRECIO: Record<string, string> = {
+  LIST: "Precio lista",
+  CASH: "Contado",
+  FINANCING: "Financiado",
+  CAMPAIGN: "Campana",
+  PREVENTA: "Preventa",
+  PREVENTA_FINANCING: "Preventa financiada",
+  DERCO_CL: "Publicado derco.cl",
+  DERCO_CL_FINANCING: "derco.cl financiado"
+};
+
+const ETIQUETA_CANAL: Record<string, string> = {
+  REGULAR: "Lista interna",
+  DERCO_CL: "derco.cl",
+  PREVENTA: "Preventa",
+  CONCESIONARIO: "Concesionario"
+};
+
+function fechaCorta(valor?: Date | string | null) {
+  if (!valor) return "-";
+  const fecha = typeof valor === "string" ? new Date(valor) : valor;
+  if (Number.isNaN(fecha.getTime())) return "-";
+  return fecha.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hideVehicleSelector = false, savedSheets = [] }: ProfitabilitySheetProps) {
@@ -344,6 +382,14 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
     const customerPayment = saleTotal - state.tradeInValue;
     const priceListFinalNet = net(priceListFinalGross);
 
+    // Porcentajes: se calculan siempre desde las mismas cifras de arriba, no
+    // se escriben a mano. Si el denominador es 0 devolvemos 0 en vez de NaN
+    // para que la hoja impresa nunca muestre "NaN%".
+    const pct = (numerador: number, denominador: number) => (denominador ? (numerador / denominador) * 100 : 0);
+    const aporteMarca = state.amicarMarca + state.aporteAdicMarca + state.aportePtteMarca;
+    const costoCasa = state.discountSergio + state.amicarSergio;
+    const rebajaTotalCliente = state.brandBonusGross + totalDiscounts;
+
     return {
       priceListFinalGross,
       priceListFinalNet,
@@ -357,11 +403,46 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       totalMarginGross,
       marginNet,
       customerPayment,
-      marginRatio: priceListFinalGross ? totalMarginGross / priceListFinalGross : 0
+      aporteMarca,
+      costoCasa,
+      rebajaTotalCliente,
+      marginRatio: priceListFinalGross ? totalMarginGross / priceListFinalGross : 0,
+      // --- Porcentajes comerciales ---
+      pctBonoMarca: pct(state.brandBonusGross, state.priceListGross),
+      pctRebajaCliente: pct(rebajaTotalCliente, state.priceListGross),
+      pctDescuentos: pct(totalDiscounts, totalIncome),
+      pctAporteMarca: pct(aporteMarca, state.priceListGross),
+      pctCostoCasa: pct(costoCasa, state.priceListGross),
+      pctNoFacturables: pct(nonInvoiceable, totalIncome),
+      pctRentabilidadLista: pct(totalMarginGross, priceListFinalGross),
+      pctRentabilidadVenta: pct(totalMarginGross, saleTotal),
+      pctMargenNeto: pct(marginNet, net(saleTotal)),
+      pctCredito: pct(state.creditMargin, totalMarginGross),
+      pctRetoma: pct(state.tradeInValue, saleTotal)
     };
   }, [state]);
 
   const siiSalePrice = state.salePriceWithVat || totals.priceListFinalGross;
+
+  // Precios tal como quedaron guardados desde la lista cargada, para poder
+  // contrastar la hoja contra su origen sin salir de la pantalla.
+  const preciosOrigen = selectedVehicle?.prices ?? [];
+
+  // Un solo lugar define los porcentajes: se usan igual en pantalla, en el
+  // correo a jefatura y en la hoja impresa.
+  const filasPorcentajes: PrintRow[] = [
+    { label: "Bono marca sobre lista", value: pctText(totals.pctBonoMarca) },
+    { label: "Rebaja total al cliente sobre lista", value: pctText(totals.pctRebajaCliente), strong: true },
+    { label: "Aporte marca sobre lista", value: pctText(totals.pctAporteMarca) },
+    { label: "Costo automotora sobre lista", value: pctText(totals.pctCostoCasa) },
+    { label: "Descuentos sobre total ingresos", value: pctText(totals.pctDescuentos) },
+    { label: "No facturables sobre total ingresos", value: pctText(totals.pctNoFacturables) },
+    { label: "Rentabilidad sobre lista final", value: pctText(totals.pctRentabilidadLista), strong: true },
+    { label: "Rentabilidad sobre precio de venta", value: pctText(totals.pctRentabilidadVenta), strong: true },
+    { label: "Margen neto sobre venta neta", value: pctText(totals.pctMargenNeto) },
+    { label: "Aporte del credito al margen", value: pctText(totals.pctCredito) },
+    { label: "Retoma sobre precio de venta", value: pctText(totals.pctRetoma) }
+  ];
   const estimatedPermit = estimateCirculationPermit(totals.priceListFinalNet, state.invoiceDate);
   const lasCondesText = `Valor neto: ${totals.priceListFinalNet} | Fecha factura: ${state.invoiceDate}${estimatedPermit ? ` | Permiso estimado: ${estimatedPermit}` : ""}`;
   const siiText = `Marca: ${selectedVehicle?.brandName ?? ""} | Modelo: ${selectedVehicle?.modelName ?? ""} ${selectedVehicle?.versionName ?? ""} | CIT: ${selectedVehicle?.citCode ?? "PENDIENTE"} | Precio venta con IVA: ${siiSalePrice}`;
@@ -467,6 +548,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       ${section("Descuentos", descuentos, true)}
       ${section("Resumen de venta", resumen, false)}
       ${section("Margenes", margenes, false)}
+      ${section("Porcentajes", filasPorcentajes.map((fila) => ({ label: fila.label, value: fila.value, strong: fila.strong })), false)}
       ${state.notes ? `<p style="margin-top:6px;color:#374151;font-size:13px"><strong>Notas:</strong> ${state.notes}</p>` : ""}
       <p style="margin-top:18px;color:#9ca3af;font-size:11px;border-top:1px solid #e5e7eb;padding-top:8px">Documento generado por Panel360 Autos · Sistema creado por Victor Herrera</p>
     </div>`;
@@ -836,6 +918,68 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
             </div>
 
             <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <h3 className="text-lg font-black text-ink">Porcentajes</h3>
+              <p className="mt-1 text-xs font-semibold text-steel">Todos salen de las cifras de esta hoja; ninguno se escribe a mano.</p>
+              <div className="mt-4 grid gap-3">
+                {filasPorcentajes.map((fila) => (
+                  <SummaryLine key={fila.label} label={fila.label} value={fila.value} strong={fila.strong} />
+                ))}
+              </div>
+            </div>
+
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-black text-ink">Lista de precios origen</h3>
+                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/historial-precios">
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  Historial
+                </a>
+              </div>
+              {preciosOrigen.length === 0 ? (
+                <p className="mt-3 text-xs font-semibold text-steel">
+                  {selectedVehicle
+                    ? "Este vehiculo no tiene precios cargados para el mes en uso."
+                    : "Selecciona un vehiculo para ver de que lista salen sus precios."}
+                </p>
+              ) : (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="data-table min-w-[420px]">
+                    <thead>
+                      <tr>
+                        <th>Precio</th>
+                        <th>Canal</th>
+                        <th>IVA</th>
+                        <th>Vigencia</th>
+                        <th>Estado</th>
+                        <th>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preciosOrigen.map((precio, index) => (
+                        <tr key={`origen-pantalla-${index}`}>
+                          <td className="font-black text-ink">{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
+                          <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
+                          <td>{precio.hasIva === false ? "Neto" : "Con IVA"}</td>
+                          <td>{fechaCorta(precio.effectiveFrom)}</td>
+                          <td>{precio.status ?? "-"}</td>
+                          <td className="font-black text-ink">{formatCLP(precio.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/actualizaciones">
+                  Ver listas cargadas
+                </a>
+                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/cambios">
+                  Que cambio este mes
+                </a>
+              </div>
+            </div>
+
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
               <h3 className="text-lg font-black text-ink">Impuesto verde SII</h3>
               <div className="mt-4 grid gap-4">
                 <MoneyInput label="Precio venta con IVA" value={state.salePriceWithVat} onChange={(value) => update("salePriceWithVat", value)} />
@@ -1004,8 +1148,41 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                 { label: "Rentabilidad", value: `${(totals.marginRatio * 100).toFixed(2)}%`, strong: true }
               ]}
             />
+            <PrintTable
+              title="Porcentajes"
+              amountLabel="%"
+              rows={filasPorcentajes}
+            />
           </div>
         </div>
+
+        {/* Origen de las cifras: los precios tal como vinieron en la lista cargada. */}
+        {preciosOrigen.length > 0 ? (
+          <table className="pr-table pr-origen">
+            <thead>
+              <tr>
+                <th>Lista de precios origen</th>
+                <th>Canal</th>
+                <th>IVA</th>
+                <th>Vigencia</th>
+                <th>Estado</th>
+                <th className="pr-amount">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preciosOrigen.map((precio, index) => (
+                <tr key={`origen-${index}`}>
+                  <td>{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
+                  <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
+                  <td>{precio.hasIva === false ? "Neto" : "Con IVA"}</td>
+                  <td>{fechaCorta(precio.effectiveFrom)}</td>
+                  <td>{precio.status ?? "-"}</td>
+                  <td className="pr-amount">{formatCLP(precio.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
 
         {state.notes ? (
           <p className="pr-notes">
