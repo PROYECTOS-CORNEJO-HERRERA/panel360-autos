@@ -4,10 +4,18 @@ import { procesarProgramados } from "@/lib/social/cola";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Corre cada hora. Publica lo que quedo programado para una hora que ya
-// paso. La granularidad es de una hora a proposito: programar al minuto
-// exacto obligaria a un cron por minuto, y para un post de catalogo eso
-// no aporta nada.
+// Corre UNA VEZ AL DIA (13:00 UTC = 10:00 en Chile). Publica todo lo que
+// quedo programado para un momento que ya paso, asi que recupera el
+// atraso completo en cada corrida.
+//
+// Era cada hora, y eso ROMPIA TODOS LOS DESPLIEGUES: el plan Hobby de
+// Vercel solo admite cron diario, y rechazaba el deploy entero con
+// "Hobby accounts are limited to daily cron jobs". Estuvo cinco dias
+// bloqueando cualquier publicacion a produccion, no solo esta funcion.
+//
+// El costo real es la precision: un post programado para las 15:00 sale
+// al dia siguiente a las 10:00. Para recuperar la granularidad por hora
+// hay que pasar al plan Pro.
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const cronSecret = process.env.CRON_SECRET;
