@@ -116,7 +116,14 @@ export async function POST(request: Request) {
 
     return NextResponse.redirect(new URL(`/actualizaciones?update=${update.id}`, request.url));
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "No fue posible procesar este archivo." }, { status: 500 });
+    // El motivo real se quedaba en los registros de Vercel y el usuario
+    // solo veia "No fue posible procesar este archivo", sin manera de
+    // saber si el problema era el archivo, la base o el almacenamiento.
+    console.error("Fallo la importacion:", error);
+    const motivo = error instanceof Error ? error.message : "error desconocido";
+    return NextResponse.json(
+      { error: `No fue posible procesar este archivo: ${motivo}` },
+      { status: 500 }
+    );
   }
 }
