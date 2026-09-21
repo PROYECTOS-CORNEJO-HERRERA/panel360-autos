@@ -89,13 +89,25 @@ const navSections: NavSection[] = [
     ]
   },
   {
+    // Todo lo que ENTRA al sistema desde un archivo de la marca vive aqui,
+    // separado de lo que se consulta. Antes la carga estaba escondida
+    // dentro de "Actualizacion Comercial" (un nombre que no dice subir) y
+    // "Listas de Precios" del menu llevaba al historial de cambios, no a
+    // cargar una lista.
+    title: "CARGAR DOCUMENTOS",
+    items: [
+      { href: "/cargar/listas-precios", label: "Listas de precios", icon: FileSpreadsheet },
+      { href: "/cargar/acciones-comerciales", label: "Acciones comerciales", icon: BadgeDollarSign },
+      { href: "/actualizaciones", label: "Revisar y aprobar cargas", icon: Bell }
+    ]
+  },
+  {
     title: "INTELIGENCIA COMERCIAL",
     items: [
       { href: "/cambios", label: "¿Qué cambió este mes?", icon: TrendingUp },
-      { href: "/actualizaciones", label: "Actualización Comercial", icon: Bell },
-      { href: "/ayudas-comerciales", label: "Acciones Comerciales", icon: BadgeDollarSign },
-      { href: "/historial-precios", label: "Listas de Precios", icon: History },
-      { href: "/documentos", label: "Documentos", icon: FileText },
+      { href: "/ayudas-comerciales", label: "Acciones comerciales vigentes", icon: BadgeDollarSign },
+      { href: "/historial-precios", label: "Historial de precios", icon: History },
+      { href: "/documentos", label: "Documentos guardados", icon: FileText },
       { href: "/promociones", label: "Promociones", icon: Sparkles }
     ]
   },

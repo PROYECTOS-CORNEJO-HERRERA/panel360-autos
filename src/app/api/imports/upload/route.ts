@@ -9,7 +9,15 @@ import { sanitizeFilename } from "@/lib/safe-paths";
 const MONTH_NAMES = ["01-enero", "02-febrero", "03-marzo", "04-abril", "05-mayo", "06-junio", "07-julio", "08-agosto", "09-septiembre", "10-octubre", "11-noviembre", "12-diciembre"];
 const MAX_SIZE_BYTES = 25 * 1024 * 1024;
 
-function documentType(extension: string) {
+// El tipo lo elige el usuario en la pantalla de carga. Adivinarlo por la
+// extension era una fuente de errores: una accion comercial en Excel se
+// guardaba como lista de precios, y despues nadie entendia por que
+// aparecia donde no correspondia.
+function documentType(extension: string, tipoElegido: string) {
+  if (tipoElegido === "LISTA_PRECIOS") return "LISTA DE PRECIOS";
+  if (tipoElegido === "ACCION_COMERCIAL") return "PLAN COMERCIAL";
+
+  // Sin tipo explicito (formularios antiguos) se mantiene la deduccion.
   if (extension === ".xlsx" || extension === ".xls") return "LISTA DE PRECIOS";
   if (extension === ".csv") return "LISTA DE PRECIOS";
   if (extension === ".pdf" || extension === ".pptx") return "PLAN COMERCIAL";
@@ -34,6 +42,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Formato no soportado." }, { status: 400 });
     }
 
+    const tipoElegido = String(formData.get("tipo") ?? "");
+    // Una lista de precios es una planilla. Si llega un PDF con ese tipo
+    // es que el usuario se equivoco de pantalla, y conviene decirselo
+    // ahora y no dejarlo con cero precios detectados y sin explicacion.
+    if (tipoElegido === "LISTA_PRECIOS" && ![".xlsx", ".xls", ".csv"].includes(extension)) {
+      return NextResponse.json(
+        {
+          error:
+            "Una lista de precios tiene que ser Excel o CSV. Si esto es un bono, campaña o plan comercial, subelo en Acciones comerciales."
+        },
+        { status: 400 }
+      );
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const now = new Date();
     const year = String(now.getFullYear());
@@ -52,7 +74,7 @@ export async function POST(request: Request) {
     const document = await prisma.document.create({
       data: {
         brandId: brand?.id,
-        type: documentType(extension),
+        type: documentType(extension, tipoElegido),
         originalName: file.name,
         storedPath,
         mimeType: file.type || undefined,

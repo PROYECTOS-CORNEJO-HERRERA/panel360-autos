@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ClipboardPaste, FileUp } from "lucide-react";
 import { aprobarPreciosDeCarga, ignoreUpdateItem, pasteCommercialUpdate, validateUpdateItem } from "@/lib/actions";
 import { formatDateTime, formatCLP } from "@/lib/format";
@@ -32,8 +33,8 @@ export default async function UpdatesPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Centro de actualizaciones"
-        description="Suba archivos, pegue mensajes o registre cambios. Todo queda detectado y en revisión antes de volverse vigente."
+        title="Revisar y aprobar cargas"
+        description="Acá se revisa lo que el sistema detectó en los documentos cargados. Nada se vuelve vigente hasta que usted lo apruebe."
       />
 
       <Notice>
@@ -44,15 +45,20 @@ export default async function UpdatesPage() {
         <Panel>
           <p className="flex items-center gap-2 text-lg font-black text-ink">
             <FileUp className="h-5 w-5 text-signal" aria-hidden="true" />
-            Subir archivo
+            Subir un documento
           </p>
-          <p className="mt-1 text-sm font-semibold text-steel">Formatos: XLSX, XLS, CSV, PDF y PPTX. Tamaño máximo: 25 MB.</p>
-          <form action="/api/imports/upload" method="post" encType="multipart/form-data" className="mt-4 grid gap-3">
-            <input className="input" name="file" type="file" accept=".xlsx,.xls,.csv,.pdf,.pptx" required />
-            <button className="btn btn-primary w-fit" type="submit">
-              Procesar y revisar
-            </button>
-          </form>
+          <p className="mt-1 text-sm font-semibold text-steel">
+            Cada tipo tiene su pantalla, para que el sistema sepa qué está recibiendo y no lo adivine por la extensión del
+            archivo.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link className="btn btn-primary" href="/cargar/listas-precios">
+              Lista de precios
+            </Link>
+            <Link className="btn" href="/cargar/acciones-comerciales">
+              Acción comercial
+            </Link>
+          </div>
         </Panel>
 
         <Panel>
