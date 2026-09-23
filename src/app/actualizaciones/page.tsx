@@ -48,15 +48,11 @@ export default async function UpdatesPage() {
             Subir un documento
           </p>
           <p className="mt-1 text-sm font-semibold text-steel">
-            Cada tipo tiene su pantalla, para que el sistema sepa qué está recibiendo y no lo adivine por la extensión del
-            archivo.
+            Las listas de precios y las acciones comerciales se suben desde una sola pantalla, eligiendo qué es cada archivo.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link className="btn btn-primary" href="/cargar/listas-precios">
-              Lista de precios
-            </Link>
-            <Link className="btn" href="/cargar/acciones-comerciales">
-              Acción comercial
+            <Link className="btn btn-primary" href="/cargar">
+              Ir a subir documentos
             </Link>
           </div>
         </Panel>

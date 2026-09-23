@@ -38,6 +38,7 @@ export type ResultadoAprobacion =
   | { ok: false; motivo: string };
 
 type PayloadPrecio = {
+  citCode?: string | null;
   channel?: string | null;
   bonusName?: string | null;
   bonusAmount?: number | null;
@@ -66,8 +67,18 @@ export async function buscarVersion(params: {
   brandName?: string | null;
   modelName?: string | null;
   versionName?: string | null;
+  citCode?: string | null;
 }): Promise<{ id: string } | null> {
-  const { brandName, modelName, versionName } = params;
+  const { brandName, modelName, versionName, citCode } = params;
+
+  // El codigo CIT identifica la version de forma exacta, asi que manda
+  // sobre el calce por nombre. En marcas como DFSK el codigo viene en
+  // otra hoja del Excel, y el indice del importador lo trae hasta aca.
+  if (citCode) {
+    const porCodigo = await prisma.version.findMany({ where: { sapCode: citCode }, select: { id: true } });
+    if (porCodigo.length === 1) return { id: porCodigo[0].id };
+  }
+
   if (!modelName && !versionName) return null;
 
   const candidatas = await prisma.version.findMany({
@@ -106,7 +117,8 @@ export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string
   if (item.category !== "PRECIO") return { ok: false, motivo: "Esta fila no es un precio." };
   if (!item.amount || item.amount <= 0) return { ok: false, motivo: "La fila no tiene un monto valido." };
 
-  const version = await buscarVersion(item);
+  const payloadItem = leerPayload(item.payloadJson);
+  const version = await buscarVersion({ ...item, citCode: payloadItem.citCode });
   if (!version) {
     // No se adivina: se explica por que quedo pendiente.
     await prisma.updateItem.update({
@@ -117,6 +129,16 @@ export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string
       },
     });
     return { ok: false, motivo: "No se encontro una unica version que calce con esa fila." };
+  }
+
+  // Si la lista traia el CIT y el catalogo no lo tenia, se completa. Asi
+  // el codigo deja de faltar para el impuesto verde del SII sin que nadie
+  // tenga que escribirlo a mano.
+  if (payloadItem.citCode) {
+    await prisma.version.updateMany({
+      where: { id: version.id, OR: [{ sapCode: null }, { sapCode: "" }] },
+      data: { sapCode: payloadItem.citCode },
+    });
   }
 
   const etiqueta = normalizeText(item.fieldName ?? "");

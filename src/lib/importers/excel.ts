@@ -104,7 +104,8 @@ function parseSheetPrecios(
   sheetName: string,
   rows: Record<string, unknown>[],
   channel: "REGULAR" | "DERCO_CL" | "PREVENTA",
-  detectedBrand: string | undefined
+  detectedBrand: string | undefined,
+  indiceCit?: Map<string, string>
 ): DetectedChange[] {
   const changes: DetectedChange[] = [];
 
@@ -131,6 +132,17 @@ function parseSheetPrecios(
     const bonusFinancing = moneyFromCell(get("bono financiamiento", "bono credito"));
     const rate = valueToString(get("tasa", "tasa especial", "tasa subvencionada", "tasas subvencionadas"));
     const promoText = valueToString(get("promociones", "campana", "beneficio adicional"));
+
+    // El CIT puede venir en esta misma fila o en otra hoja del libro
+    // (es lo que pasa con DFSK). Primero se mira la fila; si no esta, se
+    // busca en el indice armado con el libro completo.
+    const citEnLaFila = valueToString(get("codigo cit", "cit", "codigo sap", "sap", "codigo"));
+    const citCode =
+      citEnLaFila ||
+      indiceCit?.get(claveCit(modelName, versionName)) ||
+      indiceCit?.get(claveCit("", versionName)) ||
+      indiceCit?.get(claveCit(modelName, "")) ||
+      "";
 
     const hasIdentity = Boolean(modelName || versionName);
 
@@ -167,7 +179,7 @@ function parseSheetPrecios(
           : iva.confianza === "REVISAR"
             ? iva.motivo
             : undefined,
-        payload: { channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null, hasIva: iva.esNeto, ivaMotivo: iva.motivo, ivaConfianza: iva.confianza }
+        payload: { citCode: citCode || null, channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null, hasIva: iva.esNeto, ivaMotivo: iva.motivo, ivaConfianza: iva.confianza }
       });
     }
 
@@ -182,7 +194,7 @@ function parseSheetPrecios(
         amount: cash,
         rawText,
         confidence: hasIdentity ? CONFIDENCE.REVIEW : CONFIDENCE.AMBIGUOUS,
-        payload: { channel, sheetName, bonusName, bonusAmount }
+        payload: { citCode: citCode || null, channel, sheetName, bonusName, bonusAmount }
       });
     }
 
@@ -197,7 +209,7 @@ function parseSheetPrecios(
         amount: financing,
         rawText,
         confidence: hasIdentity ? CONFIDENCE.REVIEW : CONFIDENCE.AMBIGUOUS,
-        payload: { channel, sheetName, bonusFinancing }
+        payload: { citCode: citCode || null, channel, sheetName, bonusFinancing }
       });
     }
 
@@ -437,11 +449,77 @@ export function detectarFilaEncabezado(sheet: XLSX.WorkSheet, maxFilas = 25): nu
   return mejorFila;
 }
 
+// ─── Indice de codigos CIT / SAP de todo el libro ─────────────────────────────
+//
+// En varias marcas (DFSK entre ellas) el codigo CIT no viene en la hoja de
+// precios: esta en OTRA hoja del mismo Excel, a veces oculta. El importador
+// leia hoja por hoja de forma aislada, asi que esos codigos no se detectaban
+// nunca. El CIT importa: es lo que identifica la version ante el SII para el
+// impuesto verde, y es una identificacion exacta, mejor que calzar nombres.
+//
+// Por eso antes de parsear nada se recorre el libro COMPLETO buscando
+// cualquier columna que sea un codigo, y se arma un indice por modelo y
+// version para poder pegarselo despues a cada fila de precio.
+
+const COLUMNAS_CIT = ["cit", "codigo cit", "cod cit", "sap", "codigo sap", "cod sap", "codigo", "cod."];
+const COLUMNAS_MODELO = ["modelo", "model", "linea"];
+const COLUMNAS_VERSION = ["version", "variante", "trim", "descripcion"];
+
+export function claveCit(modelo: string, version: string): string {
+  return norm(`${modelo} ${version}`).replace(/\s+/g, " ").trim();
+}
+
+function indiceDeColumna(claves: string[], candidatas: string[]): number {
+  return claves.findIndex((clave) => candidatas.some((c) => clave === c || clave.startsWith(`${c} `) || clave.includes(c)));
+}
+
+export function construirIndiceCit(workbook: XLSX.WorkBook): Map<string, string> {
+  const indice = new Map<string, string>();
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+    const filaEncabezado = detectarFilaEncabezado(sheet);
+    const matriz = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
+    const encabezado = (matriz[filaEncabezado] ?? []).map((c) => norm(valueToString(c)));
+
+    const colCit = indiceDeColumna(encabezado, COLUMNAS_CIT);
+    if (colCit < 0) continue;
+
+    const colModelo = indiceDeColumna(encabezado, COLUMNAS_MODELO);
+    const colVersion = indiceDeColumna(encabezado, COLUMNAS_VERSION);
+    if (colModelo < 0 && colVersion < 0) continue;
+
+    for (let i = filaEncabezado + 1; i < matriz.length; i++) {
+      const fila = matriz[i] ?? [];
+      const codigo = valueToString(fila[colCit]);
+      if (!codigo || codigo.length < 3) continue;
+
+      const modelo = colModelo >= 0 ? valueToString(fila[colModelo]) : "";
+      const version = colVersion >= 0 ? valueToString(fila[colVersion]) : "";
+      if (!modelo && !version) continue;
+
+      // Se registra bajo varias claves para poder calzar despues aunque la
+      // hoja de precios escriba el nombre de otra forma. La primera que se
+      // escribe manda: no se pisa un codigo ya encontrado.
+      for (const clave of [claveCit(modelo, version), claveCit("", version), claveCit(modelo, "")]) {
+        if (clave && !indice.has(clave)) indice.set(clave, codigo);
+      }
+    }
+  }
+
+  return indice;
+}
+
 export async function parseExcel(buffer: Buffer): Promise<ImportResult> {
   // cellStyles y sheetStubs: leer el archivo completo, incluidas las
   // celdas vacias y la metadata de filas/columnas ocultas. (Las filas
   // ocultas ya se leian: SheetJS parsea el XML, no lo que se ve.)
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, cellStyles: true, sheetStubs: true });
+
+  // Se recorre el libro ENTERO antes de parsear, porque los codigos CIT
+  // pueden estar en una hoja distinta de la de precios.
+  const indiceCit = construirIndiceCit(workbook);
   const textParts: string[] = [];
   const changes: DetectedChange[] = [];
   const sheetSummaries: string[] = [];
@@ -463,13 +541,13 @@ export async function parseExcel(buffer: Buffer): Promise<ImportResult> {
 
     switch (sheetKind) {
       case "PRECIOS":
-        changes.push(...parseSheetPrecios(sheetName, rows, "REGULAR", undefined));
+        changes.push(...parseSheetPrecios(sheetName, rows, "REGULAR", undefined, indiceCit));
         break;
       case "DERCO_CL":
-        changes.push(...parseSheetPrecios(sheetName, rows, "DERCO_CL", undefined));
+        changes.push(...parseSheetPrecios(sheetName, rows, "DERCO_CL", undefined, indiceCit));
         break;
       case "PREVENTA":
-        changes.push(...parseSheetPrecios(sheetName, rows, "PREVENTA", undefined));
+        changes.push(...parseSheetPrecios(sheetName, rows, "PREVENTA", undefined, indiceCit));
         break;
       case "PATENTE_GRATIS":
         changes.push(...parseSheetPatenteGratis(sheetName, rows));

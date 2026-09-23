@@ -959,7 +959,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                         <tr key={`origen-pantalla-${index}`}>
                           <td className="font-black text-ink">{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
                           <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
-                          <td>{precio.hasIva === false ? "Neto" : "Con IVA"}</td>
+                          <td>{precio.hasIva ? "Neto (+IVA)" : "Con IVA"}</td>
                           <td>{fechaCorta(precio.effectiveFrom)}</td>
                           <td>{precio.status ?? "-"}</td>
                           <td className="font-black text-ink">{formatCLP(precio.amount)}</td>
@@ -1174,7 +1174,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                 <tr key={`origen-${index}`}>
                   <td>{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
                   <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
-                  <td>{precio.hasIva === false ? "Neto" : "Con IVA"}</td>
+                  <td>{precio.hasIva ? "Neto (+IVA)" : "Con IVA"}</td>
                   <td>{fechaCorta(precio.effectiveFrom)}</td>
                   <td>{precio.status ?? "-"}</td>
                   <td className="pr-amount">{formatCLP(precio.amount)}</td>

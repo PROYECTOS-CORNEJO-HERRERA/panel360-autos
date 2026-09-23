@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   CreditCard,
   FileSpreadsheet,
+  Upload,
   FileText,
   Gauge,
   History,
@@ -96,8 +97,7 @@ const navSections: NavSection[] = [
     // cargar una lista.
     title: "CARGAR DOCUMENTOS",
     items: [
-      { href: "/cargar/listas-precios", label: "Listas de precios", icon: FileSpreadsheet },
-      { href: "/cargar/acciones-comerciales", label: "Acciones comerciales", icon: BadgeDollarSign },
+      { href: "/cargar", label: "Subir documentos", icon: Upload },
       { href: "/actualizaciones", label: "Revisar y aprobar cargas", icon: Bell }
     ]
   },

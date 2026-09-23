@@ -136,7 +136,13 @@ export async function POST(request: Request) {
       }
     });
 
-    return NextResponse.redirect(new URL(`/actualizaciones?update=${update.id}`, request.url));
+    // 303 y no el 307 por omision de NextResponse.redirect. Un 307
+    // CONSERVA el metodo, asi que el navegador volvia a mandar el POST
+    // (con el Excel entero) a /actualizaciones; Next.js interpreta un
+    // POST a una pagina como una accion de formulario, no la encontraba
+    // y respondia 500. Ese era el error de TODAS las cargas: el archivo
+    // se guardaba bien y el fallo venia despues, al redirigir.
+    return NextResponse.redirect(new URL(`/actualizaciones?update=${update.id}`, request.url), 303);
   } catch (error) {
     // El motivo real se quedaba en los registros de Vercel y el usuario
     // solo veia "No fue posible procesar este archivo", sin manera de
