@@ -182,6 +182,11 @@ function foldText(value: string) {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+// Columna TOTAL del informe: bruto menos neto, que es el IVA del monto.
+function iva(bruto: number, neto?: number) {
+  return round(bruto - (neto ?? net(bruto)));
+}
+
 function net(value: number) {
   return round(value / vatRate);
 }
@@ -534,6 +539,20 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       return `<table style="width:100%;border-collapse:collapse;margin:0 0 18px">${head}${body}</table>`;
     };
 
+    // Descuentos con la tercera columna TOTAL (bruto - neto), igual que
+    // el informe impreso.
+    const seccionDescuentos = (rows: Row[]) => {
+      const head = `<tr><th style="${th}">Descuentos</th><th style="${thR}">Bruto</th><th style="${thR}">Neto</th><th style="${thR}">Total</th></tr>`;
+      const body = rows
+        .map((row) => {
+          const strong = row.strong ? "font-weight:bold;background:#f3f4f6;" : "";
+          const bruto = typeof row.value === "number" ? row.value : 0;
+          return `<tr><td style="${td};${strong}">${row.label}</td><td style="${tdR};${strong}">${money(row.value)}</td><td style="${tdR};${strong}">${row.neto != null ? formatCLP(row.neto) : ""}</td><td style="${tdR};${strong}">${formatCLP(iva(bruto, row.neto))}</td></tr>`;
+        })
+        .join("");
+      return `<table style="width:100%;border-collapse:collapse;margin:0 0 18px">${head}${body}</table>`;
+    };
+
     const ingresos: Row[] = [
       ...filasIngresos.map((f) => ({ label: f.label, value: f.value, neto: f.neto, strong: f.strong })),
       { label: "TOTAL BRUTO", value: totals.totalIncome, neto: net(totals.totalIncome), strong: true }
@@ -577,7 +596,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       <p style="margin:0 0 14px;color:#374151;font-size:13px">Estimada jefatura, se solicita <strong>autorizacion</strong> de la siguiente hoja de rentabilidad:</p>
       ${section("Ingresos", ingresos, true)}
       ${section("No facturables", noFact, false)}
-      ${section("Descuentos", descuentos, true)}
+      ${seccionDescuentos(descuentos)}
       ${section("Resumen de venta", resumen, false)}
       ${section("Margenes", margenes, false)}
       ${section("Porcentajes", filasPorcentajes.map((fila) => ({ label: fila.label, value: fila.value, strong: fila.strong })), false)}
@@ -1174,6 +1193,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                   <th>DESCUENTOS</th>
                   <th className="pr-amount">BRUTO</th>
                   <th className="pr-amount">NETO</th>
+                  <th className="pr-amount">TOTAL</th>
                 </tr>
               </thead>
               <tbody>
@@ -1182,12 +1202,14 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                     <td>{fila.label}</td>
                     <td className="pr-amount">{formatCLP(Number(fila.value))}</td>
                     <td className="pr-amount">{fila.neto != null ? formatCLP(fila.neto) : ""}</td>
+                    <td className="pr-amount">{formatCLP(iva(Number(fila.value), fila.neto))}</td>
                   </tr>
                 ))}
                 <tr className="pr-total">
                   <td>TOTAL DESCUENTOS</td>
                   <td className="pr-amount">{formatCLP(totals.totalDiscounts)}</td>
                   <td className="pr-amount">{formatCLP(net(totals.totalDiscounts))}</td>
+                  <td className="pr-amount">{formatCLP(iva(totals.totalDiscounts, net(totals.totalDiscounts)))}</td>
                 </tr>
               </tbody>
             </table>
