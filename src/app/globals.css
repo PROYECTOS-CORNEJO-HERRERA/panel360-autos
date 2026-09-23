@@ -440,128 +440,110 @@ a {
     print-color-adjust: exact;
   }
 
+  /* --- Encabezado: titulo centrado, como el informe oficial --- */
   .print-report .pr-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 2px solid #b45309;
+    text-align: center;
+    border-bottom: 2px solid #111827;
     padding-bottom: 6px;
-    margin-bottom: 9px;
+    margin-bottom: 8px;
   }
 
   .print-report .pr-head h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 800;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.02em;
     color: #111827;
   }
 
   .print-report .pr-head .pr-brand {
     margin: 2px 0 0;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: #b45309;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
   }
 
-  .print-report .pr-meta {
-    text-align: right;
-  }
-
-  .print-report .pr-meta p {
-    margin: 1px 0;
-    font-size: 10.5px;
-    color: #374151;
-  }
-
-  .print-report .pr-meta strong {
-    color: #111827;
-  }
-
-  .print-report .pr-vehicle {
-    margin-bottom: 9px;
-  }
-
-  .print-report .pr-vehicle h2 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 800;
-    color: #111827;
-  }
-
-  .print-report .pr-vehicle p {
-    margin: 3px 0 0;
-    font-size: 11px;
-    color: #374151;
-  }
-
-  /* Dos columnas dentro de la hoja vertical (retrato) para que TODO quepa en 1 pagina. */
-  .print-report .pr-cols {
+  /* Caja de PEDIDO DE VENTA / INT, en dos celdas con borde */
+  .print-report .pr-pedido {
     display: flex;
-    gap: 14px;
+    border: 1px solid #111827;
+    margin-bottom: 8px;
+    font-size: 10px;
+  }
+
+  .print-report .pr-pedido > div {
+    flex: 1;
+    padding: 4px 8px;
+  }
+
+  .print-report .pr-pedido > div + div {
+    border-left: 1px solid #111827;
+  }
+
+  .print-report .pr-vehiculo {
+    margin: 0 0 8px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #374151;
+  }
+
+  /* Cuerpo: tablas a la izquierda, cajas RETOMA/CREDITO a la derecha */
+  .print-report .pr-cuerpo {
+    display: flex;
+    gap: 12px;
     align-items: flex-start;
   }
 
-  .print-report .pr-cols > div {
+  .print-report .pr-col-principal {
+    flex: 1.9;
+    min-width: 0;
+  }
+
+  .print-report .pr-col-lateral {
     flex: 1;
     min-width: 0;
   }
 
-  .print-report .pr-table {
+  /* Cajas laterales con borde completo, como en el original */
+  .print-report .pr-box {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 9px;
+    margin-bottom: 8px;
     break-inside: avoid;
   }
 
-  /* Encabezados legibles AUNQUE el navegador imprima sin "graficos de fondo"
-     (es la casilla que casi nadie marca): texto oscuro + linea, y el fondo
-     gris queda solo como mejora cuando si se imprimen los fondos. */
-  .print-report .pr-table th {
-    text-align: left;
-    font-size: 8.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #111827;
+  .print-report .pr-box th {
+    border: 1px solid #111827;
     background: #e5e7eb !important;
-    border-bottom: 1.5px solid #111827;
-    padding: 3px 7px;
+    padding: 3px 6px;
+    font-size: 9px;
+    font-weight: 800;
+    text-align: center;
+    text-transform: uppercase;
+    color: #111827;
   }
 
-  .print-report .pr-table th.pr-amount {
-    text-align: right;
-  }
-
-  /* Tabla de origen: mas columnas, ancho completo, al pie del informe. */
-  .print-report .pr-origen {
-    margin-top: 4px;
-  }
-
-  .print-report .pr-origen td {
+  .print-report .pr-box td {
+    border: 1px solid #111827;
+    padding: 2.5px 6px;
     font-size: 9.5px;
-  }
-
-  .print-report .pr-table td {
-    padding: 2.5px 7px;
-    border-bottom: 1px solid #e5e7eb;
-    font-size: 10.5px;
     color: #1f2937;
   }
 
-  .print-report .pr-table td.pr-amount {
+  .print-report .pr-box td:last-child {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
-  .print-report .pr-table tr.pr-strong td {
+  /* Fila de total: linea gruesa arriba y abajo, como el TOTAL BRUTO */
+  .print-report .pr-table tr.pr-total td {
     font-weight: 800;
     color: #111827;
     border-top: 1.5px solid #111827;
-    border-bottom: none;
+    border-bottom: 1.5px solid #111827;
     background: #f3f4f6 !important;
   }
 

@@ -72,6 +72,16 @@ export type FormState = {
   creditMargin: number;
   marginPercent: number;
   tradeInValue: number;
+  // Caja RETOMA del informe.
+  tradeInBrand: string;
+  tradeInModel: string;
+  tradeInPlate: string;
+  tradeInAppraisal: number;
+  tradeInBonus: number;
+  // Caja CREDITO del informe.
+  creditBalance: number;
+  creditPrepayment: number;
+  creditSpread: number;
   notes: string;
 };
 
@@ -106,7 +116,7 @@ const defaultState: FormState = {
   greenTax: 0,
   soap: 22000,
   circulationPermit: 0,
-  accGrabado: 0,
+  accGrabado: 35000, // Grabado de patentes: va siempre, por eso viene puesto.
   maintenance: 0,
   interests: 0,
   others: 0,
@@ -116,8 +126,16 @@ const defaultState: FormState = {
   aporteAdicMarca: 0,
   aportePtteMarca: 0,
   creditMargin: 0,
-  marginPercent: 7,
+  marginPercent: 8, // El margen de un negocio es 8% por defecto.
   tradeInValue: 0,
+  tradeInBrand: "",
+  tradeInModel: "",
+  tradeInPlate: "",
+  tradeInAppraisal: 0,
+  tradeInBonus: 0,
+  creditBalance: 0,
+  creditPrepayment: 0,
+  creditSpread: 0,
   notes: ""
 };
 
@@ -428,6 +446,35 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
   // contrastar la hoja contra su origen sin salir de la pantalla.
   const preciosOrigen = selectedVehicle?.prices ?? [];
 
+  // Las filas del informe, en el MISMO orden y con las MISMAS etiquetas
+  // del informe oficial de Sergio Escobar. Un solo lugar las define para
+  // que la pantalla, la impresion y el correo no se desalineen nunca.
+  const filasIngresos: PrintRow[] = [
+    { label: "Precio Lista Unidad", value: state.priceListGross, neto: net(state.priceListGross) },
+    { label: "- ZQDA (Bono Marca)", value: state.brandBonusGross, neto: net(state.brandBonusGross) },
+    { label: "Precio de Lista Final", value: totals.priceListFinalGross, neto: totals.priceListFinalNet, strong: true },
+    { label: "+ Flete", value: state.fleteOsorno, neto: net(state.fleteOsorno) },
+    { label: "+ Pisos de goma", value: state.rubberFloor, neto: net(state.rubberFloor) },
+    { label: "+ Set de seguridad", value: state.safetyKit, neto: net(state.safetyKit) },
+    { label: "+ Trins", value: state.trins, neto: net(state.trins) },
+    { label: "Inscripcion", value: state.registration, neto: net(state.registration) },
+    { label: "Imp. Fuentes Movs.", value: state.greenTax, neto: net(state.greenTax) },
+    { label: "Seguro Obligatorio", value: state.soap, neto: net(state.soap) },
+    { label: "Permiso de Circulacion", value: state.circulationPermit, neto: net(state.circulationPermit) },
+    { label: "+ Accesorios", value: state.accGrabado, neto: net(state.accGrabado) },
+    { label: "+ Mantencion", value: state.maintenance, neto: net(state.maintenance) },
+    { label: "+ Intereses", value: state.interests, neto: net(state.interests) },
+    { label: "+ Otros", value: state.others, neto: net(state.others) }
+  ];
+
+  const filasDescuentos: PrintRow[] = [
+    { label: "ZQDV Desct. S. Escobar", value: state.discountSergio, neto: net(state.discountSergio) },
+    { label: "Z104 Amicar S. Escobar", value: state.amicarSergio, neto: net(state.amicarSergio) },
+    { label: "Z127 Amicar Marca", value: state.amicarMarca, neto: net(state.amicarMarca) },
+    { label: "Z126 Aporte adic. Marca", value: state.aporteAdicMarca, neto: net(state.aporteAdicMarca) },
+    { label: "Z124 Aporte Ptte. Marca", value: state.aportePtteMarca, neto: net(state.aportePtteMarca) }
+  ];
+
   // Un solo lugar define los porcentajes: se usan igual en pantalla, en el
   // correo a jefatura y en la hoja impresa.
   const filasPorcentajes: PrintRow[] = [
@@ -488,18 +535,8 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
     };
 
     const ingresos: Row[] = [
-      { label: "Precio Lista Unidad", value: state.priceListGross, neto: net(state.priceListGross) },
-      { label: "Bono Marca (-)", value: state.brandBonusGross, neto: net(state.brandBonusGross) },
-      { label: "Precio Lista Final", value: totals.priceListFinalGross, neto: totals.priceListFinalNet, strong: true },
-      { label: "Flete Osorno", value: state.fleteOsorno, neto: net(state.fleteOsorno) },
-      { label: "Pisos de goma", value: state.rubberFloor, neto: net(state.rubberFloor) },
-      { label: "Set de Seguridad", value: state.safetyKit, neto: net(state.safetyKit) },
-      { label: "Trins", value: state.trins, neto: net(state.trins) },
-      { label: "ACC Grabado PPU + Gardex", value: state.accGrabado, neto: net(state.accGrabado) },
-      { label: "Mantencion", value: state.maintenance, neto: net(state.maintenance) },
-      { label: "Intereses / gastos", value: state.interests, neto: net(state.interests) },
-      { label: "Otros", value: state.others, neto: net(state.others) },
-      { label: "Total ingresos facturables", value: totals.invoiceableGross, neto: totals.invoiceableNet, strong: true }
+      ...filasIngresos.map((f) => ({ label: f.label, value: f.value, neto: f.neto, strong: f.strong })),
+      { label: "TOTAL BRUTO", value: totals.totalIncome, neto: net(totals.totalIncome), strong: true }
     ];
     const noFact: Row[] = [
       { label: "Inscripcion", value: state.registration },
@@ -509,13 +546,8 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       { label: "Total no facturables", value: totals.nonInvoiceable, strong: true }
     ];
     const descuentos: Row[] = [
-      { label: "ZQDV Desct. S. Escobar", value: state.discountSergio, neto: net(state.discountSergio) },
-      { label: "Z104 Amicar S. Escobar", value: state.amicarSergio, neto: net(state.amicarSergio) },
-      { label: "Z127 Amicar Marca", value: state.amicarMarca, neto: net(state.amicarMarca) },
-      { label: "Z126 Aporte adic. Marca", value: state.aporteAdicMarca, neto: net(state.aporteAdicMarca) },
-      { label: "Z124 Aporte Ptte. Marca", value: state.aportePtteMarca, neto: net(state.aportePtteMarca) },
-      { label: "Retoma", value: state.tradeInValue, neto: net(state.tradeInValue) },
-      { label: "Total descuentos", value: totals.totalDiscounts, neto: net(totals.totalDiscounts), strong: true }
+      ...filasDescuentos.map((f) => ({ label: f.label, value: f.value, neto: f.neto, strong: f.strong })),
+      { label: "TOTAL DESCUENTOS", value: totals.totalDiscounts, neto: net(totals.totalDiscounts), strong: true }
     ];
     const resumen: Row[] = [
       { label: "Total ingresos", value: totals.totalIncome },
@@ -918,6 +950,29 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
             </div>
 
             <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <h3 className="text-lg font-black text-ink">Retoma</h3>
+              <p className="mt-1 text-xs font-semibold text-steel">Los datos del vehiculo que entrega el cliente. Salen en la caja RETOMA del informe.</p>
+              <div className="mt-4 grid gap-4">
+                <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
+                <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
+                <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
+                <MoneyInput label="Tasacion" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
+                <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
+                <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
+              </div>
+            </div>
+
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <h3 className="text-lg font-black text-ink">Credito</h3>
+              <div className="mt-4 grid gap-4">
+                <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
+                <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
+                <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
+                <MoneyInput label="Margen credito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
+              </div>
+            </div>
+
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
               <h3 className="text-lg font-black text-ink">Porcentajes</h3>
               <p className="mt-1 text-xs font-semibold text-steel">Todos salen de las cifras de esta hoja; ninguno se escribe a mano.</p>
               <div className="mt-4 grid gap-3">
@@ -1058,110 +1113,227 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
         </section>
       ) : null}
 
-      {/* Informe dedicado para impresion / PDF: formato documento limpio (solo visible al imprimir) */}
+      {/* ============================================================
+          INFORME DE RENTABILIDAD (solo al imprimir)
+          ============================================================
+          Formato calcado del informe oficial de Sergio Escobar: mismo
+          orden, mismas etiquetas y las dos columnas BRUTO / NETO. Los
+          conceptos que se suman llevan "+" adelante y los no facturables
+          van sin signo, igual que en el original. */}
       <section className="print-report">
         <div className="pr-head">
+          <h1>INFORME DE RENTABILIDAD</h1>
+          <p className="pr-brand">Sergio Escobar Automotriz</p>
+        </div>
+
+        <div className="pr-pedido">
           <div>
-            <h1>Hoja de Rentabilidad</h1>
-            <p className="pr-brand">Sergio Escobar Automotriz</p>
+            <strong>PEDIDO DE VENTA:</strong> {state.orderNumber || "-"}
           </div>
-          <div className="pr-meta">
-            <p><strong>Fecha factura:</strong> {state.invoiceDate || "-"}</p>
-            <p><strong>Nota venta:</strong> {state.orderNumber || "-"}</p>
-            <p><strong>Interno:</strong> {state.internalNumber || "-"}</p>
+          <div>
+            <strong>INT:</strong> {state.internalNumber || "-"}
           </div>
         </div>
 
-        <div className="pr-vehicle">
-          <h2>{selectedVehicle?.label ?? "Vehiculo no seleccionado"}</h2>
-          <p>
-            Cliente: {state.customerName || "-"} &middot; Correo: {state.customerEmail || "-"} &middot; Codigo CIT: {selectedVehicle?.citCode ?? "Pendiente"}
-          </p>
-          <p>
-            Marca: {selectedVehicle?.brandName ?? "-"} &middot; Modelo: {selectedVehicle ? `${selectedVehicle.modelName} ${selectedVehicle.versionName}` : "-"} &middot; Precio venta c/IVA (SII): {formatCLP(siiSalePrice)}
-          </p>
+        <p className="pr-vehiculo">
+          {selectedVehicle?.label ?? "Vehiculo no seleccionado"}
+          {selectedVehicle?.citCode ? " · CIT: " + selectedVehicle.citCode : ""}
+          {state.customerName ? " · Cliente: " + state.customerName : ""}
+          {state.invoiceDate ? " · Factura: " + state.invoiceDate : ""}
+        </p>
+
+        <div className="pr-cuerpo">
+          <div className="pr-col-principal">
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>INGRESOS</th>
+                  <th className="pr-amount">BRUTO</th>
+                  <th className="pr-amount">NETO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filasIngresos.map((fila, indice) => (
+                  <tr key={"ing-" + indice} className={fila.strong ? "pr-strong" : undefined}>
+                    <td>{fila.label}</td>
+                    <td className="pr-amount">{formatCLP(Number(fila.value))}</td>
+                    <td className="pr-amount">{fila.neto != null ? formatCLP(fila.neto) : ""}</td>
+                  </tr>
+                ))}
+                <tr className="pr-total">
+                  <td>TOTAL BRUTO</td>
+                  <td className="pr-amount">{formatCLP(totals.totalIncome)}</td>
+                  <td className="pr-amount">{formatCLP(net(totals.totalIncome))}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>DESCUENTOS</th>
+                  <th className="pr-amount">BRUTO</th>
+                  <th className="pr-amount">NETO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filasDescuentos.map((fila, indice) => (
+                  <tr key={"desc-" + indice} className={fila.strong ? "pr-strong" : undefined}>
+                    <td>{fila.label}</td>
+                    <td className="pr-amount">{formatCLP(Number(fila.value))}</td>
+                    <td className="pr-amount">{fila.neto != null ? formatCLP(fila.neto) : ""}</td>
+                  </tr>
+                ))}
+                <tr className="pr-total">
+                  <td>TOTAL DESCUENTOS</td>
+                  <td className="pr-amount">{formatCLP(totals.totalDiscounts)}</td>
+                  <td className="pr-amount">{formatCLP(net(totals.totalDiscounts))}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>RESULTADO</th>
+                  <th className="pr-amount">BRUTO</th>
+                  <th className="pr-amount">NETO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="pr-strong">
+                  <td>PRECIO DE VENTA</td>
+                  <td className="pr-amount">{formatCLP(totals.saleTotal)}</td>
+                  <td className="pr-amount">{formatCLP(net(totals.saleTotal))}</td>
+                </tr>
+                <tr>
+                  <td>Retoma</td>
+                  <td className="pr-amount">{formatCLP(state.tradeInValue)}</td>
+                  <td className="pr-amount">{formatCLP(net(state.tradeInValue))}</td>
+                </tr>
+                <tr className="pr-total">
+                  <td>A PAGAR CLIENTE</td>
+                  <td className="pr-amount">{formatCLP(totals.customerPayment)}</td>
+                  <td className="pr-amount">{formatCLP(net(totals.customerPayment))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pr-col-lateral">
+            <table className="pr-box">
+              <thead>
+                <tr>
+                  <th colSpan={2}>RETOMA</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Marca</td>
+                  <td>{state.tradeInBrand}</td>
+                </tr>
+                <tr>
+                  <td>Modelo</td>
+                  <td>{state.tradeInModel}</td>
+                </tr>
+                <tr>
+                  <td>Patente</td>
+                  <td>{state.tradeInPlate}</td>
+                </tr>
+                <tr>
+                  <td>Tasacion</td>
+                  <td>{formatCLP(state.tradeInAppraisal)}</td>
+                </tr>
+                <tr>
+                  <td>Bono Retoma</td>
+                  <td>{formatCLP(state.tradeInBonus)}</td>
+                </tr>
+                <tr>
+                  <td>Valor Retoma</td>
+                  <td>{formatCLP(state.tradeInValue)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="pr-box">
+              <thead>
+                <tr>
+                  <th colSpan={2}>CREDITO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Saldo Precio</td>
+                  <td>{formatCLP(state.creditBalance)}</td>
+                </tr>
+                <tr>
+                  <td>Retoma</td>
+                  <td>{formatCLP(state.tradeInValue)}</td>
+                </tr>
+                <tr>
+                  <td>Prepago sin 2%</td>
+                  <td>{formatCLP(state.creditPrepayment)}</td>
+                </tr>
+                <tr>
+                  <td>Spread</td>
+                  <td>{formatCLP(state.creditSpread)}</td>
+                </tr>
+                <tr>
+                  <td>Margen Cred.</td>
+                  <td>{formatCLP(state.creditMargin)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="pr-box">
+              <thead>
+                <tr>
+                  <th colSpan={2}>MARGENES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Margen unidad</td>
+                  <td>{state.marginPercent}%</td>
+                </tr>
+                <tr>
+                  <td>Margen vehiculo</td>
+                  <td>{formatCLP(totals.vehicleMarginGross)}</td>
+                </tr>
+                <tr>
+                  <td>Margen total bruto</td>
+                  <td>{formatCLP(totals.totalMarginGross)}</td>
+                </tr>
+                <tr>
+                  <td>Margen total neto</td>
+                  <td>{formatCLP(totals.marginNet)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="pr-box">
+              <thead>
+                <tr>
+                  <th colSpan={2}>PORCENTAJES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filasPorcentajes.map((fila) => (
+                  <tr key={"pct-" + fila.label}>
+                    <td>{fila.label}</td>
+                    <td>{fila.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="pr-cols">
-          <div>
-            <PrintTable
-              title="Ingresos"
-              showNeto
-              rows={[
-                { label: "Precio Lista Unidad", value: state.priceListGross, neto: net(state.priceListGross) },
-                { label: "Bono Marca (-)", value: state.brandBonusGross, neto: net(state.brandBonusGross) },
-                { label: "Precio Lista Final", value: totals.priceListFinalGross, neto: totals.priceListFinalNet, strong: true },
-                { label: "Flete Osorno", value: state.fleteOsorno, neto: net(state.fleteOsorno) },
-                { label: "Pisos de goma", value: state.rubberFloor, neto: net(state.rubberFloor) },
-                { label: "Set de Seguridad", value: state.safetyKit, neto: net(state.safetyKit) },
-                { label: "Trins", value: state.trins, neto: net(state.trins) },
-                { label: "ACC Grabado PPU + Gardex", value: state.accGrabado, neto: net(state.accGrabado) },
-                { label: "Mantencion", value: state.maintenance, neto: net(state.maintenance) },
-                { label: "Intereses / gastos", value: state.interests, neto: net(state.interests) },
-                { label: "Otros", value: state.others, neto: net(state.others) },
-                { label: "Total ingresos facturables", value: totals.invoiceableGross, neto: totals.invoiceableNet, strong: true }
-              ]}
-            />
-            <PrintTable
-              title="No facturables"
-              rows={[
-                { label: "Inscripcion", value: state.registration },
-                { label: "Imp. Fuentes Movs. (verde)", value: state.greenTax },
-                { label: "Seguro Obligatorio (SOAP)", value: state.soap },
-                { label: "Permiso Circulacion", value: state.circulationPermit },
-                { label: "Total no facturables", value: totals.nonInvoiceable, strong: true }
-              ]}
-            />
-          </div>
-          <div>
-            <PrintTable
-              title="Descuentos"
-              showNeto
-              rows={[
-                { label: "ZQDV Desct. S. Escobar", value: state.discountSergio, neto: net(state.discountSergio) },
-                { label: "Z104 Amicar S. Escobar", value: state.amicarSergio, neto: net(state.amicarSergio) },
-                { label: "Z127 Amicar Marca", value: state.amicarMarca, neto: net(state.amicarMarca) },
-                { label: "Z126 Aporte adic. Marca", value: state.aporteAdicMarca, neto: net(state.aporteAdicMarca) },
-                { label: "Z124 Aporte Ptte. Marca", value: state.aportePtteMarca, neto: net(state.aportePtteMarca) },
-                { label: "Retoma", value: state.tradeInValue, neto: net(state.tradeInValue) },
-                { label: "Total descuentos", value: totals.totalDiscounts, neto: net(totals.totalDiscounts), strong: true }
-              ]}
-            />
-            <PrintTable
-              title="Resumen de venta"
-              rows={[
-                { label: "Total ingresos", value: totals.totalIncome },
-                { label: "Total descuentos", value: totals.totalDiscounts },
-                { label: "Precio de venta", value: totals.saleTotal, strong: true },
-                { label: "Retoma", value: state.tradeInValue },
-                { label: "A pagar cliente", value: totals.customerPayment, strong: true }
-              ]}
-            />
-            <PrintTable
-              title="Margenes"
-              rows={[
-                { label: "Margen unidad %", value: `${state.marginPercent}%` },
-                { label: "Margen vehiculo bruto", value: totals.vehicleMarginGross },
-                { label: "Utilidad credito", value: state.creditMargin },
-                { label: "Margen total bruto", value: totals.totalMarginGross, strong: true },
-                { label: "Margen total neto", value: totals.marginNet },
-                { label: "Rentabilidad", value: `${(totals.marginRatio * 100).toFixed(2)}%`, strong: true }
-              ]}
-            />
-            <PrintTable
-              title="Porcentajes"
-              amountLabel="%"
-              rows={filasPorcentajes}
-            />
-          </div>
-        </div>
-
-        {/* Origen de las cifras: los precios tal como vinieron en la lista cargada. */}
         {preciosOrigen.length > 0 ? (
           <table className="pr-table pr-origen">
             <thead>
               <tr>
-                <th>Lista de precios origen</th>
+                <th>LISTA DE PRECIOS ORIGEN</th>
                 <th>Canal</th>
                 <th>IVA</th>
                 <th>Vigencia</th>
@@ -1171,7 +1343,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
             </thead>
             <tbody>
               {preciosOrigen.map((precio, index) => (
-                <tr key={`origen-${index}`}>
+                <tr key={"origen-" + index}>
                   <td>{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
                   <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
                   <td>{precio.hasIva ? "Neto (+IVA)" : "Con IVA"}</td>
@@ -1195,7 +1367,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
           <p>Nombre y firma jefe sucursal</p>
         </div>
 
-        <p className="pr-foot">Documento generado por Panel360 Autos &middot; {today} &middot; Sistema creado por Victor Herrera</p>
+        <p className="pr-foot">Panel360 Autos &middot; {today}</p>
       </section>
     </div>
   );
