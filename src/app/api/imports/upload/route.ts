@@ -1,6 +1,7 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { INFO_STATUS } from "@/lib/constants";
+import { CONFIDENCE, INFO_STATUS } from "@/lib/constants";
+import { aprobarItemComoPrecio } from "@/lib/importers/aprobar-precios";
 import { storeDocumentFile } from "@/lib/document-storage";
 import { allowedDocumentExtensions, parseCommercialDocument } from "@/lib/importers";
 import { prisma } from "@/lib/prisma";
@@ -135,6 +136,40 @@ export async function POST(request: Request) {
         }
       }
     });
+
+    // ── Aprobacion automatica de lo que NO tiene dudas ──────────────
+    //
+    // Revisar 124 filas a mano no es trabajo de una persona. El sistema
+    // aprueba solo las filas de confianza ALTA: vehiculo identificado sin
+    // ambiguedad y con el IVA resuelto sin dudas.
+    //
+    // Lo que queda en REQUIERE_REVISION o AMBIGUA NO se aprueba solo, a
+    // proposito: son justamente las filas donde equivocarse cuesta caro
+    // (un 19% de error por el IVA, o un precio pegado a la version
+    // equivocada). Esas quedan para que una persona decida.
+    const candidatas = await prisma.updateItem.findMany({
+      where: { updateId: update.id, category: "PRECIO", confidence: CONFIDENCE.HIGH },
+      select: { id: true }
+    });
+
+    let aprobadosSolos = 0;
+    for (const candidata of candidatas) {
+      const resultado = await aprobarItemComoPrecio(candidata.id, "Aprobacion automatica");
+      if (resultado.ok) aprobadosSolos++;
+    }
+
+    if (aprobadosSolos > 0) {
+      const quedanPendientes = await prisma.updateItem.count({
+        where: { updateId: update.id, status: { in: [INFO_STATUS.DETECTED, INFO_STATUS.IN_REVIEW] } }
+      });
+      await prisma.update.update({
+        where: { id: update.id },
+        data: {
+          status: quedanPendientes === 0 ? INFO_STATUS.ACTIVE : INFO_STATUS.IN_REVIEW,
+          approvedAt: new Date()
+        }
+      });
+    }
 
     // 303 y no el 307 por omision de NextResponse.redirect. Un 307
     // CONSERVA el metodo, asi que el navegador volvia a mandar el POST

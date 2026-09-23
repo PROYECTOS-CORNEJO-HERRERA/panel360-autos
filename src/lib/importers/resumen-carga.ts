@@ -25,10 +25,15 @@ export type ResumenCarga = {
   inconsistencias: number;
   /** Los motivos concretos, agrupados y contados. */
   motivos: { motivo: string; filas: number }[];
+  /** De que se componen los precios: cada version trae varios (lista,
+   *  contado, financiamiento...). Sin esto el total parece inflado:
+   *  33 versiones pueden dar 124 precios y nadie entiende por que. */
+  porTipo: { tipo: string; filas: number }[];
 };
 
 type ItemResumible = {
   category: string;
+  fieldName?: string | null;
   brandName: string | null;
   modelName: string | null;
   versionName: string | null;
@@ -68,6 +73,12 @@ export function resumirCarga(items: ItemResumible[], tituloCarga?: string | null
     (i) => i.confidence === "AMBIGUA" || Boolean(i.ambiguityReason)
   );
 
+  const porTipoMapa = new Map<string, number>();
+  for (const p of precios) {
+    const tipo = p.fieldName?.trim() || "Sin tipo";
+    porTipoMapa.set(tipo, (porTipoMapa.get(tipo) ?? 0) + 1);
+  }
+
   const porMotivo = new Map<string, number>();
   for (const item of conProblema) {
     const motivo = item.ambiguityReason ?? "Sin identificar";
@@ -80,6 +91,7 @@ export function resumirCarga(items: ItemResumible[], tituloCarga?: string | null
 
   return {
     marcas,
+    porTipo: [...porTipoMapa.entries()].map(([tipo, filas]) => ({ tipo, filas })).sort((a, b) => b.filas - a.filas),
     periodo: periodoDetectado ? nombreMesComercial(periodoDetectado) : null,
     modelos: modelos.size,
     versiones: versiones.size,

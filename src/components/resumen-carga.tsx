@@ -35,6 +35,26 @@ export function ResumenCargaPanel({ resumen }: { resumen: ResumenCarga }) {
         {dato("Requieren revisión", resumen.inconsistencias, resumen.inconsistencias > 0)}
       </div>
 
+      {resumen.porTipo.length > 0 && (
+        <div className="mt-4 rounded-lg border border-graphite/10 bg-white/60 p-3">
+          <p className="text-[11px] font-black uppercase text-steel">
+            De que se componen esos {resumen.precios} precios
+          </p>
+          <p className="mt-1 text-xs font-semibold text-steel">
+            Cada version trae varios precios (lista, contado, financiamiento, bonos). Por eso el total es mayor que la
+            cantidad de vehiculos.
+          </p>
+          <ul className="mt-2 grid gap-1">
+            {resumen.porTipo.map(({ tipo, filas }) => (
+              <li key={tipo} className="flex items-center justify-between gap-3 text-xs font-bold text-graphite">
+                <span>{tipo}</span>
+                <span className="text-ink">{filas}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {resumen.motivos.length > 0 && (
         <div className="mt-4 border-t border-graphite/10 pt-3">
           <p className="text-xs font-black uppercase text-steel">Por qué requieren revisión</p>

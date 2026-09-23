@@ -51,17 +51,61 @@ function norm(text: unknown): string {
   return normalizeText(valueToString(text));
 }
 
+/** Devuelve el texto solo si parece un nombre (no un numero ni un porcentaje). */
+function nombreValido(texto: string): string {
+  const limpio = texto.trim();
+  if (!limpio) return "";
+  if (/^[\d.,%\s$-]+$/.test(limpio)) return "";
+  if (!/[a-zA-Z]/.test(limpio)) return "";
+  return limpio;
+}
+
 function hasAny(text: string, words: string[]): boolean {
   return words.some((w) => text.includes(w));
 }
 
 type RowGetter = (...candidates: string[]) => unknown;
 
+/**
+ * Puntua que tan bien calza el nombre de una columna con lo que se busca.
+ * 3 = es exactamente esa columna, 2 = empieza por ahi, 1 = solo la
+ * contiene, 0 = no calza.
+ *
+ * Antes se aceptaba el PRIMER calce de cualquier tipo, y "contiene"
+ * bastaba: buscando "marca" se tomaba la columna "% aporte marca" si
+ * aparecia antes, y la marca del vehiculo quedaba siendo 0.0944. Por eso
+ * el resumen mostraba numeros decimales donde deberia decir DFSK.
+ */
+function puntuarColumna(clave: string, candidato: string): number {
+  if (clave === candidato) return 3;
+  if (clave.startsWith(`${candidato} `)) return 2;
+  if (clave.includes(candidato)) return 1;
+  return 0;
+}
+
+function mejorIndice(normalizedKeys: string[], candidates: string[]): number {
+  let mejor = -1;
+  let mejorPuntaje = 0;
+
+  // Los candidatos van en orden de preferencia: el primero que calce
+  // bien gana, y dentro de un mismo candidato manda la calidad del calce.
+  for (const candidato of candidates) {
+    for (let i = 0; i < normalizedKeys.length; i++) {
+      const puntaje = puntuarColumna(normalizedKeys[i], candidato);
+      if (puntaje > mejorPuntaje) {
+        mejorPuntaje = puntaje;
+        mejor = i;
+      }
+    }
+    if (mejorPuntaje === 3) break;
+  }
+
+  return mejor;
+}
+
 function makeGetter(entries: [string, unknown][], normalizedKeys: string[]): RowGetter {
   return (...candidates: string[]): unknown => {
-    const index = normalizedKeys.findIndex((key) =>
-      candidates.some((c) => key === c || key.startsWith(`${c} `) || key.includes(c))
-    );
+    const index = mejorIndice(normalizedKeys, candidates);
     return index >= 0 ? entries[index][1] : undefined;
   };
 }
@@ -74,9 +118,7 @@ function makeGetter(entries: [string, unknown][], normalizedKeys: string[]): Row
  */
 function makeGetterConClave(entries: [string, unknown][], normalizedKeys: string[]) {
   return (...candidates: string[]): { valor: unknown; clave: string } | null => {
-    const index = normalizedKeys.findIndex((key) =>
-      candidates.some((c) => key === c || key.startsWith(`${c} `) || key.includes(c))
-    );
+    const index = mejorIndice(normalizedKeys, candidates);
     return index >= 0 ? { valor: entries[index][1], clave: normalizedKeys[index] } : null;
   };
 }
@@ -115,9 +157,12 @@ function parseSheetPrecios(
     const get = makeGetter(entries, normalizedKeys);
     const rawText = entries.map(([key, value]) => `${key}: ${valueToString(value)}`).join(" | ");
 
-    const brandName = valueToString(get("marca", "brand", "fabricante")) || detectedBrand || "";
-    const modelName = valueToString(get("modelo", "model", "linea"));
-    const versionName = valueToString(get("version", "variante", "trim", "descripcion sap"));
+    // Una marca es un nombre. Si lo que salio es un numero o un
+    // porcentaje, la columna elegida no era la marca: se descarta antes
+    // de que contamine todo el resumen de la carga.
+    const brandName = nombreValido(valueToString(get("marca", "brand", "fabricante"))) || detectedBrand || "";
+    const modelName = nombreValido(valueToString(get("modelo", "model", "linea")));
+    const versionName = nombreValido(valueToString(get("version", "variante", "trim", "descripcion sap")));
 
     // Bloque C: se guarda de QUE columna salio el precio de lista, para
     // poder deducir si viene neto o con IVA.
