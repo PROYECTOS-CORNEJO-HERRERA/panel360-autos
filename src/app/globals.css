@@ -431,6 +431,40 @@ a {
     display: none !important;
   }
 
+  /* La hoja se cortaba por el costado: las tablas crecian segun su
+     contenido y se pasaban del ancho util del A4 (186 mm con margenes de
+     12 mm). Con table-layout fijo, ninguna tabla puede exceder el ancho
+     de la hoja, y el texto largo corta dentro de su celda en vez de
+     empujar la tabla hacia afuera. */
+  .print-report,
+  .print-report * {
+    max-width: 100%;
+  }
+
+  .print-report table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .print-report td,
+  .print-report th {
+    overflow-wrap: anywhere;
+  }
+
+  /* Las columnas de plata no deben partirse: se les fija un ancho y se
+     deja que el concepto use el resto. */
+  .print-report .pr-table th.pr-amount,
+  .print-report .pr-table td.pr-amount {
+    width: 22%;
+    white-space: nowrap;
+  }
+
+  .print-report .pr-origen th,
+  .print-report .pr-origen td {
+    width: auto;
+    white-space: normal;
+  }
+
   .print-report {
     display: block !important;
     color: #111827;
@@ -536,6 +570,45 @@ a {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  /* Tablas principales del informe */
+  .print-report .pr-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+    break-inside: avoid;
+  }
+
+  /* Encabezados legibles AUNQUE el navegador imprima sin "graficos de
+     fondo" (la casilla que casi nadie marca): texto oscuro y linea. */
+  .print-report .pr-table th {
+    text-align: left;
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #111827;
+    background: #e5e7eb !important;
+    border-bottom: 1.5px solid #111827;
+    padding: 3px 7px;
+  }
+
+  .print-report .pr-table th.pr-amount {
+    text-align: right;
+  }
+
+  .print-report .pr-table td.pr-amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Subtotales dentro de la tabla, como "Precio de Lista Final" */
+  .print-report .pr-table tr.pr-strong td {
+    font-weight: 800;
+    color: #111827;
+    border-top: 1px solid #111827;
+    border-bottom: 1px solid #111827;
   }
 
   /* Fila de total: linea gruesa arriba y abajo, como el TOTAL BRUTO */

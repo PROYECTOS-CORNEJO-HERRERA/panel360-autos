@@ -894,8 +894,8 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
           </div>
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_0.8fr]">
-          <div className="grid gap-5">
+        <div className="mt-5 grid items-start gap-5 xl:grid-cols-[1fr_0.8fr]">
+          <div className="grid content-start gap-5">
             <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
               <h3 className="text-lg font-black text-ink">Ingresos</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -933,9 +933,32 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                 <MoneyInput label="Retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
               </div>
             </div>
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <h3 className="text-lg font-black text-ink">Retoma</h3>
+              <p className="mt-1 text-xs font-semibold text-steel">Los datos del vehiculo que entrega el cliente. Salen en la caja RETOMA del informe.</p>
+              <div className="mt-4 grid gap-4">
+                <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
+                <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
+                <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
+                <MoneyInput label="Tasacion" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
+                <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
+                <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
+              </div>
+            </div>
+
+            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
+              <h3 className="text-lg font-black text-ink">Credito</h3>
+              <div className="mt-4 grid gap-4">
+                <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
+                <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
+                <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
+                <MoneyInput label="Margen credito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
+              </div>
+            </div>
+
           </div>
 
-          <aside className="grid gap-5">
+          <aside className="grid content-start gap-5">
             <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
               <h3 className="text-lg font-black text-ink">Resumen</h3>
               <div className="mt-4 grid gap-3">
@@ -965,29 +988,6 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
                   <SummaryLine label="Margen total neto" value={totals.marginNet} />
                   <SummaryLine label="Rentabilidad" value={`${(totals.marginRatio * 100).toFixed(2)}%`} />
                 </div>
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Retoma</h3>
-              <p className="mt-1 text-xs font-semibold text-steel">Los datos del vehiculo que entrega el cliente. Salen en la caja RETOMA del informe.</p>
-              <div className="mt-4 grid gap-4">
-                <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
-                <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
-                <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
-                <MoneyInput label="Tasacion" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
-                <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
-                <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Credito</h3>
-              <div className="mt-4 grid gap-4">
-                <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
-                <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
-                <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
-                <MoneyInput label="Margen credito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
               </div>
             </div>
 
