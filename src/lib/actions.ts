@@ -363,6 +363,11 @@ export async function aprobarPreciosDeCarga(formData: FormData) {
   revalidatePath("/comparador");
   revalidatePath("/rentabilidad");
   revalidatePath("/vehiculos");
+
+  // El boton "Aprobar N precios" no devolvia nada: si ninguna fila
+  // calzaba con el catalogo, no pasaba nada en pantalla y parecia roto.
+  // Ahora siempre se informa el resultado.
+  redirect(`/actualizaciones?update=${updateId}&aprobados=${aprobados}&pendientes=${pendientes}`);
 }
 
 export async function createCustomer(formData: FormData) {

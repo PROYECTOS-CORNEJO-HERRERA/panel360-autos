@@ -15,7 +15,11 @@ function confidenceTone(confidence: string) {
   return "warn" as const;
 }
 
-export default async function UpdatesPage() {
+export default async function UpdatesPage({
+  searchParams
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
   const [updates, documents, priceHistory] = await Promise.all([
     prisma.update.findMany({
       include: { items: { orderBy: { createdAt: "desc" } } },
@@ -30,12 +34,46 @@ export default async function UpdatesPage() {
     })
   ]);
 
+  // Resultado de la ultima accion (subir o aprobar), para que los botones
+  // dejen de parecer que no hacen nada.
+  const leer = (clave: string) => {
+    const bruto = searchParams?.[clave];
+    const valor = Array.isArray(bruto) ? bruto[0] : bruto;
+    const numero = Number.parseInt(valor ?? "", 10);
+    return Number.isNaN(numero) ? null : numero;
+  };
+  const cit = leer("cit");
+  const aprobados = leer("aprobados");
+  const pendientes = leer("pendientes");
+
+  const partes: string[] = [];
+  if (aprobados !== null) {
+    partes.push(
+      aprobados > 0
+        ? `Se aprobaron ${aprobados} precios automaticamente.`
+        : "No se aprobo ningun precio automaticamente: ninguna fila calzo con una unica version del catalogo."
+    );
+  }
+  if (pendientes !== null && pendientes > 0) {
+    partes.push(`${pendientes} quedaron pendientes de revision.`);
+  }
+  if (cit !== null) {
+    partes.push(
+      cit > 0
+        ? `Se completaron ${cit} codigos CIT en el catalogo.`
+        : "No se completo ningun codigo CIT: el archivo no traia codigos, o no calzaron con las versiones del catalogo."
+    );
+  }
+  const avisoResultado = partes.length > 0 ? partes.join(" ") : null;
+
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Revisar y aprobar cargas"
         description="Acá se revisa lo que el sistema detectó en los documentos cargados. Nada se vuelve vigente hasta que usted lo apruebe."
       />
+
+      {avisoResultado ? <Notice>{avisoResultado}</Notice> : null}
 
       <Notice>
         Los importadores procesan localmente y conservan el documento original. Si la información es ambigua o contradictoria, el sistema la mantiene en revisión para completar manualmente.

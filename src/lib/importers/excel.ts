@@ -147,7 +147,7 @@ function parseSheetPrecios(
   rows: Record<string, unknown>[],
   channel: "REGULAR" | "DERCO_CL" | "PREVENTA",
   detectedBrand: string | undefined,
-  indiceCit?: Map<string, string>
+  indiceCit?: IndiceCodigos
 ): DetectedChange[] {
   const changes: DetectedChange[] = [];
 
@@ -181,13 +181,15 @@ function parseSheetPrecios(
     // El CIT puede venir en esta misma fila o en otra hoja del libro
     // (es lo que pasa con DFSK). Primero se mira la fila; si no esta, se
     // busca en el indice armado con el libro completo.
-    const citEnLaFila = valueToString(get("codigo cit", "cit", "codigo sap", "sap", "codigo"));
-    const citCode =
-      citEnLaFila ||
-      indiceCit?.get(claveCit(modelName, versionName)) ||
-      indiceCit?.get(claveCit("", versionName)) ||
-      indiceCit?.get(claveCit(modelName, "")) ||
+    // Solo columnas que digan CIT. "CODIGO SAP" no sirve: es otro codigo.
+    const citEnLaFila = valueToString(get("codigo cit", "cod cit", "cit"));
+    const buscar = (mapa?: Map<string, string>) =>
+      mapa?.get(claveCit(modelName, versionName)) ||
+      mapa?.get(claveCit("", versionName)) ||
+      mapa?.get(claveCit(modelName, "")) ||
       "";
+    const citCode = citEnLaFila || buscar(indiceCit?.cit) || "";
+    const sapCode = valueToString(get("codigo sap", "cod sap", "sap")) || buscar(indiceCit?.sap) || "";
 
     const hasIdentity = Boolean(modelName || versionName);
 
@@ -224,7 +226,7 @@ function parseSheetPrecios(
           : iva.confianza === "REVISAR"
             ? iva.motivo
             : undefined,
-        payload: { citCode: citCode || null, channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null, hasIva: iva.esNeto, ivaMotivo: iva.motivo, ivaConfianza: iva.confianza }
+        payload: { citCode: citCode || null, sapCode: sapCode || null, channel, sheetName, bonusName: bonusName ?? null, bonusAmount: bonusAmount ?? null, cash: cash ?? null, financing: financing ?? null, bonusFinancing: bonusFinancing ?? null, rate: rate || null, promoText: promoText || null, hasIva: iva.esNeto, ivaMotivo: iva.motivo, ivaConfianza: iva.confianza }
       });
     }
 
@@ -239,7 +241,7 @@ function parseSheetPrecios(
         amount: cash,
         rawText,
         confidence: hasIdentity ? CONFIDENCE.REVIEW : CONFIDENCE.AMBIGUOUS,
-        payload: { citCode: citCode || null, channel, sheetName, bonusName, bonusAmount }
+        payload: { citCode: citCode || null, sapCode: sapCode || null, channel, sheetName, bonusName, bonusAmount }
       });
     }
 
@@ -254,7 +256,7 @@ function parseSheetPrecios(
         amount: financing,
         rawText,
         confidence: hasIdentity ? CONFIDENCE.REVIEW : CONFIDENCE.AMBIGUOUS,
-        payload: { citCode: citCode || null, channel, sheetName, bonusFinancing }
+        payload: { citCode: citCode || null, sapCode: sapCode || null, channel, sheetName, bonusFinancing }
       });
     }
 
@@ -506,7 +508,12 @@ export function detectarFilaEncabezado(sheet: XLSX.WorkSheet, maxFilas = 25): nu
 // cualquier columna que sea un codigo, y se arma un indice por modelo y
 // version para poder pegarselo despues a cada fila de precio.
 
-const COLUMNAS_CIT = ["cit", "codigo cit", "cod cit", "sap", "codigo sap", "cod sap", "codigo", "cod."];
+// CIT y SAP NO son lo mismo. En la lista de DFSK la hoja de precios trae
+// "CODIGO SAP" (5406, 5411...) y el CIT vive en una hoja aparte llamada
+// "Codigos CIT". Al meterlos en la misma lista, el importador tomaba el
+// SAP como si fuera el CIT y el codigo que importa nunca aparecia.
+const COLUMNAS_CIT = ["codigo cit", "cod cit", "cit"];
+const COLUMNAS_SAP = ["codigo sap", "cod sap", "sap", "codigo", "cod."];
 const COLUMNAS_MODELO = ["modelo", "model", "linea"];
 const COLUMNAS_VERSION = ["version", "variante", "trim", "descripcion"];
 
@@ -518,42 +525,88 @@ function indiceDeColumna(claves: string[], candidatas: string[]): number {
   return claves.findIndex((clave) => candidatas.some((c) => clave === c || clave.startsWith(`${c} `) || clave.includes(c)));
 }
 
-export function construirIndiceCit(workbook: XLSX.WorkBook): Map<string, string> {
-  const indice = new Map<string, string>();
+export type IndiceCodigos = {
+  /** Codigo CIT por modelo/version. Es el que identifica la version ante el SII. */
+  cit: Map<string, string>;
+  /** Codigo SAP por modelo/version. Sirve para calzar, pero NO es el CIT. */
+  sap: Map<string, string>;
+  /** Cuantas hojas aportaron codigos CIT, para poder informarlo. */
+  hojasConCit: string[];
+};
+
+function registrar(mapa: Map<string, string>, modelo: string, version: string, codigo: string) {
+  // Se registra bajo varias claves para poder calzar despues aunque la
+  // hoja de precios escriba el nombre de otra forma. La primera que se
+  // escribe manda: no se pisa un codigo ya encontrado.
+  for (const clave of [claveCit(modelo, version), claveCit("", version), claveCit(modelo, "")]) {
+    if (clave && !mapa.has(clave)) mapa.set(clave, codigo);
+  }
+}
+
+export function construirIndiceCit(workbook: XLSX.WorkBook): IndiceCodigos {
+  const cit = new Map<string, string>();
+  const sap = new Map<string, string>();
+  const hojasConCit: string[] = [];
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
     const filaEncabezado = detectarFilaEncabezado(sheet);
     const matriz = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
-    const encabezado = (matriz[filaEncabezado] ?? []).map((c) => norm(valueToString(c)));
 
-    const colCit = indiceDeColumna(encabezado, COLUMNAS_CIT);
-    if (colCit < 0) continue;
-
-    const colModelo = indiceDeColumna(encabezado, COLUMNAS_MODELO);
-    const colVersion = indiceDeColumna(encabezado, COLUMNAS_VERSION);
-    if (colModelo < 0 && colVersion < 0) continue;
-
-    for (let i = filaEncabezado + 1; i < matriz.length; i++) {
-      const fila = matriz[i] ?? [];
-      const codigo = valueToString(fila[colCit]);
-      if (!codigo || codigo.length < 3) continue;
-
-      const modelo = colModelo >= 0 ? valueToString(fila[colModelo]) : "";
-      const version = colVersion >= 0 ? valueToString(fila[colVersion]) : "";
-      if (!modelo && !version) continue;
-
-      // Se registra bajo varias claves para poder calzar despues aunque la
-      // hoja de precios escriba el nombre de otra forma. La primera que se
-      // escribe manda: no se pisa un codigo ya encontrado.
-      for (const clave of [claveCit(modelo, version), claveCit("", version), claveCit(modelo, "")]) {
-        if (clave && !indice.has(clave)) indice.set(clave, codigo);
+    // La hoja de codigos suele no tener columnas de precio, asi que la
+    // deteccion de encabezado puede fallar. Se prueba tambien fila por
+    // fila hasta encontrar una que tenga una columna de codigo.
+    let encabezado: string[] = [];
+    let filaReal = filaEncabezado;
+    for (let i = 0; i < Math.min(matriz.length, 25); i++) {
+      const candidata = (matriz[i] ?? []).map((c) => norm(valueToString(c)));
+      if (indiceDeColumna(candidata, COLUMNAS_CIT) >= 0 || indiceDeColumna(candidata, COLUMNAS_SAP) >= 0) {
+        encabezado = candidata;
+        filaReal = i;
+        break;
       }
     }
+    if (encabezado.length === 0) continue;
+
+    const colCit = indiceDeColumna(encabezado, COLUMNAS_CIT);
+    const colSap = indiceDeColumna(encabezado, COLUMNAS_SAP);
+    const colModelo = indiceDeColumna(encabezado, COLUMNAS_MODELO);
+    const colVersion = indiceDeColumna(encabezado, COLUMNAS_VERSION);
+    if (colCit < 0 && colSap < 0) continue;
+    if (colModelo < 0 && colVersion < 0) continue;
+
+    let aporto = false;
+    for (let i = filaReal + 1; i < matriz.length; i++) {
+      const fila = matriz[i] ?? [];
+      const modelo = colModelo >= 0 ? nombreValido(valueToString(fila[colModelo])) : "";
+      const version = colVersion >= 0 ? nombreValido(valueToString(fila[colVersion])) : "";
+      if (!modelo && !version) continue;
+
+      if (colCit >= 0) {
+        const codigo = valueToString(fila[colCit]);
+        if (codigo) {
+          registrar(cit, modelo, version, codigo);
+          aporto = true;
+        }
+      }
+      if (colSap >= 0) {
+        const codigo = valueToString(fila[colSap]);
+        if (codigo) registrar(sap, modelo, version, codigo);
+      }
+    }
+
+    if (aporto) hojasConCit.push(sheetName);
   }
 
-  return indice;
+  return { cit, sap, hojasConCit };
+}
+
+/** Lee solo los codigos del libro, sin parsear precios. Lo usa la carga
+ *  para escribir los CIT al catalogo apenas entra el archivo. */
+export function extraerIndiceCodigos(buffer: Buffer): IndiceCodigos {
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, cellStyles: true, sheetStubs: true });
+  return construirIndiceCit(workbook);
 }
 
 export async function parseExcel(buffer: Buffer): Promise<ImportResult> {

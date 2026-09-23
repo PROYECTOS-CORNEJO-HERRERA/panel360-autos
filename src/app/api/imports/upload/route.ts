@@ -2,6 +2,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { CONFIDENCE, INFO_STATUS } from "@/lib/constants";
 import { aprobarItemComoPrecio } from "@/lib/importers/aprobar-precios";
+import { aplicarCodigosAlCatalogo } from "@/lib/importers/codigos-cit";
+import { extraerIndiceCodigos } from "@/lib/importers/excel";
 import { storeDocumentFile } from "@/lib/document-storage";
 import { allowedDocumentExtensions, parseCommercialDocument } from "@/lib/importers";
 import { prisma } from "@/lib/prisma";
@@ -137,6 +139,20 @@ export async function POST(request: Request) {
       }
     });
 
+    // ── Codigos CIT al catalogo ─────────────────────────────────────
+    //
+    // Se hace aparte de aprobar precios y antes que eso: el CIT es dato
+    // del vehiculo, no del precio, y no tiene por que depender de que la
+    // fila de precio calce.
+    let codigos = { completados: 0, yaTenian: 0, sinCalce: [] as string[] };
+    if ([".xlsx", ".xls"].includes(extension)) {
+      try {
+        codigos = await aplicarCodigosAlCatalogo(extraerIndiceCodigos(buffer));
+      } catch (error) {
+        console.error("No se pudieron aplicar los codigos CIT:", error);
+      }
+    }
+
     // ── Aprobacion automatica de lo que NO tiene dudas ──────────────
     //
     // Revisar 124 filas a mano no es trabajo de una persona. El sistema
@@ -177,7 +193,10 @@ export async function POST(request: Request) {
     // POST a una pagina como una accion de formulario, no la encontraba
     // y respondia 500. Ese era el error de TODAS las cargas: el archivo
     // se guardaba bien y el fallo venia despues, al redirigir.
-    return NextResponse.redirect(new URL(`/actualizaciones?update=${update.id}`, request.url), 303);
+    const destino = new URL(`/actualizaciones?update=${update.id}`, request.url);
+    destino.searchParams.set("cit", String(codigos.completados));
+    destino.searchParams.set("aprobados", String(aprobadosSolos));
+    return NextResponse.redirect(destino, 303);
   } catch (error) {
     // El motivo real se quedaba en los registros de Vercel y el usuario
     // solo veia "No fue posible procesar este archivo", sin manera de
