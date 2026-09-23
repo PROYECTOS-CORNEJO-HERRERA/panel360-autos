@@ -350,6 +350,25 @@ a {
   }
 }
 
+/* Al 100% de zoom la pagina se corria hacia la derecha: una tabla ancha
+   (las de "cambios detectados" llevan min-w) empujaba TODO el layout,
+   porque nada limitaba el ancho del contenedor. Ahora el desborde lo
+   absorbe la tabla con su propio scroll, y la pagina no se mueve. */
+.app-content-wrap {
+  overflow-x: hidden;
+}
+
+.app-content-wrap > main {
+  min-width: 0;
+}
+
+/* Los textos detectados vienen en una sola linea larguisima, sin
+   espacios donde cortar. Sin esto estiran la tabla sin limite. */
+.app-content-wrap table td,
+.app-content-wrap table th {
+  overflow-wrap: anywhere;
+}
+
 .print-report {
   display: none;
 }

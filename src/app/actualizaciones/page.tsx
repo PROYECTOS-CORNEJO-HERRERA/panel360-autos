@@ -64,6 +64,16 @@ export default async function UpdatesPage({
         : "No se completo ningun codigo CIT: el archivo no traia codigos, o no calzaron con las versiones del catalogo."
     );
   }
+  const citSinCalce = leer("citSinCalce");
+  const citYaTenian = leer("citYaTenian");
+  if (citYaTenian !== null && citYaTenian > 0) {
+    partes.push(`${citYaTenian} versiones ya tenian su codigo cargado.`);
+  }
+  if (citSinCalce !== null && citSinCalce > 0) {
+    partes.push(
+      `${citSinCalce} codigos del archivo no calzaron con ninguna version del catalogo (puede que esas versiones todavia no existan).`
+    );
+  }
   const avisoResultado = partes.length > 0 ? partes.join(" ") : null;
 
   return (

@@ -89,15 +89,51 @@ export async function buscarVersion(params: {
   const nModel = modelName ? normalizeText(modelName) : null;
   const nVersion = versionName ? normalizeText(versionName) : null;
 
-  const coincidencias = candidatas.filter((v) => {
+  // Las listas escriben la version con el modelo y la carroceria
+  // adelante: el catalogo la llama "C21 1.3" y el Excel dice "Cargo Box
+  // CS C21 1.3". Comparar el texto completo no calzaba NUNCA, y por eso
+  // decenas de filas buenas quedaban "requieren revision" -- el problema
+  // era del sistema, no de la lista.
+  //
+  // Se compara en tres pasadas, de la mas estricta a la mas flexible, y
+  // en todas se exige que el resultado sea UNICO. Si hay dos candidatas
+  // se prefiere no elegir: un precio en la version equivocada es un
+  // error que nadie ve.
+  const mismoModelo = candidatas.filter((v) => {
     if (nBrand && normalizeText(v.brand.name) !== nBrand) return false;
     if (nModel && normalizeText(v.model.name) !== nModel) return false;
-    if (nVersion && normalizeText(v.name) !== nVersion) return false;
     return true;
   });
 
-  // Exactamente una: se acepta. Ninguna o varias: se deja a una persona.
-  return coincidencias.length === 1 ? { id: coincidencias[0].id } : null;
+  if (!nVersion) {
+    return mismoModelo.length === 1 ? { id: mismoModelo[0].id } : null;
+  }
+
+  // 1) Nombre identico.
+  const exactas = mismoModelo.filter((v) => normalizeText(v.name) === nVersion);
+  if (exactas.length === 1) return { id: exactas[0].id };
+  if (exactas.length > 1) return null;
+
+  // 2) El nombre del catalogo esta contenido en el del Excel ("c21 1.3"
+  //    dentro de "cargo box cs c21 1.3"), o al reves. Se toma la
+  //    coincidencia mas larga: entre "c21 1.3" y "c21 1.3 ac" gana la
+  //    que use mas del texto, que es la mas especifica.
+  const contenidas = mismoModelo.filter((v) => {
+    const n = normalizeText(v.name);
+    if (!n) return false;
+    return nVersion.includes(n) || n.includes(nVersion);
+  });
+
+  if (contenidas.length === 1) return { id: contenidas[0].id };
+
+  if (contenidas.length > 1) {
+    const ordenadas = [...contenidas].sort((a, b) => normalizeText(b.name).length - normalizeText(a.name).length);
+    const largo = normalizeText(ordenadas[0].name).length;
+    const empatadas = ordenadas.filter((v) => normalizeText(v.name).length === largo);
+    return empatadas.length === 1 ? { id: empatadas[0].id } : null;
+  }
+
+  return null;
 }
 
 /**
@@ -125,7 +161,7 @@ export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string
       where: { id: itemId },
       data: {
         status: INFO_STATUS.IN_REVIEW,
-        ambiguityReason: `No se pudo identificar una unica version para "${item.brandName ?? ""} ${item.modelName ?? ""} ${item.versionName ?? ""}".trim() en el catalogo. Corrige el nombre o crea la version antes de aprobar.`,
+        ambiguityReason: `No se pudo identificar una unica version para "${`${item.brandName ?? ""} ${item.modelName ?? ""} ${item.versionName ?? ""}`.replace(/\s+/g, " ").trim()}" en el catalogo. Corrige el nombre o crea la version antes de aprobar.`,
       },
     });
     return { ok: false, motivo: "No se encontro una unica version que calce con esa fila." };

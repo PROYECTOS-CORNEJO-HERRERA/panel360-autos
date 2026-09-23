@@ -8,6 +8,7 @@ import { storeDocumentFile } from "@/lib/document-storage";
 import { allowedDocumentExtensions, parseCommercialDocument } from "@/lib/importers";
 import { prisma } from "@/lib/prisma";
 import { sanitizeFilename } from "@/lib/safe-paths";
+import { normalizeText } from "@/lib/format";
 
 const MONTH_NAMES = ["01-enero", "02-febrero", "03-marzo", "04-abril", "05-mayo", "06-junio", "07-julio", "08-agosto", "09-septiembre", "10-octubre", "11-noviembre", "12-diciembre"];
 const MAX_SIZE_BYTES = 25 * 1024 * 1024;
@@ -72,7 +73,19 @@ export async function POST(request: Request) {
     });
 
     const result = await parseCommercialDocument(file.name, buffer);
-    const brand = result.detectedBrand ? await prisma.brand.findFirst({ where: { name: { equals: result.detectedBrand } } }) : null;
+
+    // La marca casi nunca viene en una columna: viene en el NOMBRE del
+    // archivo ("...DFSK - Septiembre 2026.xlsx") y en el titulo de la
+    // hoja. Por eso el resumen decia "No detectada" aunque fuera obvia.
+    // Se busca contra las marcas que existen en el catalogo, sin inventar.
+    const marcasCatalogo = await prisma.brand.findMany({ select: { id: true, name: true } });
+    const textoParaMarca = normalizeText(`${file.name} ${result.rawText.slice(0, 2000)}`);
+    const marcaDelArchivo =
+      marcasCatalogo.find((m) => textoParaMarca.includes(normalizeText(m.name))) ?? null;
+
+    const brand = result.detectedBrand
+      ? await prisma.brand.findFirst({ where: { name: { equals: result.detectedBrand } } })
+      : marcaDelArchivo;
 
     const document = await prisma.document.create({
       data: {
@@ -123,7 +136,7 @@ export async function POST(request: Request) {
         items: {
           create: result.changes.map((change) => ({
             category: change.category,
-            brandName: change.brandName,
+            brandName: change.brandName || marcaDelArchivo?.name || result.detectedBrand || null,
             modelName: change.modelName,
             versionName: change.versionName,
             fieldName: change.fieldName,
@@ -148,6 +161,9 @@ export async function POST(request: Request) {
     if ([".xlsx", ".xls"].includes(extension)) {
       try {
         codigos = await aplicarCodigosAlCatalogo(extraerIndiceCodigos(buffer));
+        if (codigos.sinCalce.length > 0) {
+          console.warn("Codigos CIT sin calce en el catalogo:", codigos.sinCalce.join(" / "));
+        }
       } catch (error) {
         console.error("No se pudieron aplicar los codigos CIT:", error);
       }
@@ -196,6 +212,8 @@ export async function POST(request: Request) {
     const destino = new URL(`/actualizaciones?update=${update.id}`, request.url);
     destino.searchParams.set("cit", String(codigos.completados));
     destino.searchParams.set("aprobados", String(aprobadosSolos));
+    destino.searchParams.set("citSinCalce", String(codigos.sinCalce.length));
+    destino.searchParams.set("citYaTenian", String(codigos.yaTenian));
     return NextResponse.redirect(destino, 303);
   } catch (error) {
     // El motivo real se quedaba en los registros de Vercel y el usuario

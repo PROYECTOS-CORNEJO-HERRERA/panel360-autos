@@ -525,7 +525,12 @@ function indiceDeColumna(claves: string[], candidatas: string[]): number {
   return claves.findIndex((clave) => candidatas.some((c) => clave === c || clave.startsWith(`${c} `) || clave.includes(c)));
 }
 
+export type EntradaCodigo = { modelo: string; version: string; codigo: string };
+
 export type IndiceCodigos = {
+  /** Cada codigo CIT con su modelo y version por separado, para poder
+   *  calzarlo con el catalogo usando la misma logica que los precios. */
+  entradasCit: EntradaCodigo[];
   /** Codigo CIT por modelo/version. Es el que identifica la version ante el SII. */
   cit: Map<string, string>;
   /** Codigo SAP por modelo/version. Sirve para calzar, pero NO es el CIT. */
@@ -546,6 +551,7 @@ function registrar(mapa: Map<string, string>, modelo: string, version: string, c
 export function construirIndiceCit(workbook: XLSX.WorkBook): IndiceCodigos {
   const cit = new Map<string, string>();
   const sap = new Map<string, string>();
+  const entradasCit: EntradaCodigo[] = [];
   const hojasConCit: string[] = [];
 
   for (const sheetName of workbook.SheetNames) {
@@ -587,6 +593,7 @@ export function construirIndiceCit(workbook: XLSX.WorkBook): IndiceCodigos {
         const codigo = valueToString(fila[colCit]);
         if (codigo) {
           registrar(cit, modelo, version, codigo);
+          entradasCit.push({ modelo, version, codigo });
           aporto = true;
         }
       }
@@ -599,7 +606,7 @@ export function construirIndiceCit(workbook: XLSX.WorkBook): IndiceCodigos {
     if (aporto) hojasConCit.push(sheetName);
   }
 
-  return { cit, sap, hojasConCit };
+  return { cit, sap, entradasCit, hojasConCit };
 }
 
 /** Lee solo los codigos del libro, sin parsear precios. Lo usa la carga
