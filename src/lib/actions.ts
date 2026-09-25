@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { INFO_STATUS } from "@/lib/constants";
-import { aprobarItemComoPrecio } from "@/lib/importers/aprobar-precios";
+import { aprobarItemComoPrecio, aprobarLote } from "@/lib/importers/aprobar-precios";
 import { parseMoney } from "@/lib/format";
 import { parseTextUpdate } from "@/lib/importers/text";
 import { prisma } from "@/lib/prisma";
@@ -340,15 +341,17 @@ export async function aprobarPreciosDeCarga(formData: FormData) {
       category: "PRECIO",
       status: { in: [INFO_STATUS.DETECTED, INFO_STATUS.IN_REVIEW] },
     },
+    include: { update: true },
   });
 
-  let aprobados = 0;
-  let pendientes = 0;
-  for (const item of items) {
-    const resultado = await aprobarItemComoPrecio(item.id);
-    if (resultado.ok) aprobados++;
-    else pendientes++;
-  }
+  // En lote: catalogo cargado una vez, filas en paralelo y con limite de
+  // tiempo. Uno por uno no alcanzaba a terminar y el boton "no hacia nada".
+  const usuario = await getCurrentUser();
+  const { aprobados, pendientes: noCalzaron, sinProcesar } = await aprobarLote(items, {
+    aprobadoPor: usuario?.name ?? usuario?.email ?? undefined,
+    presupuestoMs: 45_000,
+  });
+  const pendientes = noCalzaron + sinProcesar;
 
   await prisma.update.update({
     where: { id: updateId },
@@ -367,7 +370,7 @@ export async function aprobarPreciosDeCarga(formData: FormData) {
   // El boton "Aprobar N precios" no devolvia nada: si ninguna fila
   // calzaba con el catalogo, no pasaba nada en pantalla y parecia roto.
   // Ahora siempre se informa el resultado.
-  redirect(`/actualizaciones?update=${updateId}&aprobados=${aprobados}&pendientes=${pendientes}`);
+  redirect(`/actualizaciones?update=${updateId}&aprobados=${aprobados}&pendientes=${noCalzaron}&sinTiempo=${sinProcesar}`);
 }
 
 export async function createCustomer(formData: FormData) {

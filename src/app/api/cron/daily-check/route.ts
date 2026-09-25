@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { verificarCron } from "@/lib/cron-auth";
+import { actualizarPreciosDerco } from "@/lib/derco/actualizar-precios";
 import { prisma } from "@/lib/prisma";
 import { sendBirthdayGreetingEmail, sendCreditRenewalEmail } from "@/lib/services/email";
 import { sendTelegramMessage } from "@/lib/services/notifications/telegram";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Notificaciones + revision de derco.cl no caben en los 10 s por omision.
+export const maxDuration = 60;
 
 // Traduce lo que respondieron Telegram y Resend a un estado honesto para
 // el historial: SENT solo si algo salio de verdad, PARTIAL si un canal
@@ -146,10 +149,22 @@ export async function GET(request: Request) {
     }
   }
 
+  // 3. Precios publicados en derco.cl. Va en este mismo cron diario y no
+  // en uno propio: el plan Hobby limita los crons, y un cron de mas ya
+  // bloqueo todos los despliegues una vez. Si derco.cl falla, las
+  // notificaciones de arriba ya salieron igual.
+  let derco: unknown = null;
+  try {
+    derco = await actualizarPreciosDerco({ presupuestoMs: 35_000 });
+  } catch (error) {
+    derco = { error: error instanceof Error ? error.message : String(error) };
+  }
+
   return NextResponse.json({
     ok: true,
     notificationsSent,
     results,
+    derco,
     executedAt: new Date().toISOString()
   });
 }

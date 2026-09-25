@@ -18,20 +18,67 @@ export const CANAL_DERCO = "DERCO_CL";
  *  no cambian por hora. */
 export const HORAS_FRESCURA = 24;
 
+/** Marca con la que se registra cada consulta a derco.cl en la bitacora. */
+const TIPO_CONSULTA = "DERCO_SYNC";
+
 export type EstadoDerco = {
-  /** Cuando se trajo por ultima vez informacion de derco.cl. */
+  /** Cuando se CONSULTO por ultima vez derco.cl (aunque nada cambiara). */
   ultimaActualizacion: Date | null;
   horasDesdeActualizacion: number | null;
   /** true si conviene volver a consultar. */
   necesitaActualizar: boolean;
   /** Cuantos precios publicados hay guardados hoy. */
   preciosGuardados: number;
+  /** Resumen de la ultima consulta, si existe. */
+  ultimoResultado: { preciosCambiados: number; versionesCalzadas: number; sinCalce: number; incompleta: boolean } | null;
   /** Texto para mostrar en pantalla. */
   descripcion: string;
 };
 
+/**
+ * Deja constancia de una consulta a derco.cl.
+ *
+ * Antes la "ultima actualizacion" se sacaba del precio mas nuevo. Pero
+ * si derco.cl no cambia sus precios, no se crea ninguno nuevo, y la
+ * pantalla decia "hace 300 horas" aunque se hubiera revisado esa misma
+ * mañana. La consulta y el cambio de precio son cosas distintas.
+ */
+export async function registrarConsultaDerco(resumen: {
+  preciosCambiados: number;
+  versionesCalzadas: number;
+  sinCalce: string[];
+  incompleta: boolean;
+  paginasLeidas: number;
+  paginas: number;
+  fallidas: { url: string }[];
+}) {
+  await prisma.auditLog.create({
+    data: {
+      entityType: TIPO_CONSULTA,
+      fieldModified: "precios_publicados",
+      newValue: String(resumen.preciosCambiados),
+      source: "derco.cl",
+      user: "actualizacion-automatica",
+      observation: JSON.stringify({
+        preciosCambiados: resumen.preciosCambiados,
+        versionesCalzadas: resumen.versionesCalzadas,
+        sinCalce: resumen.sinCalce.length,
+        incompleta: resumen.incompleta,
+        paginasLeidas: resumen.paginasLeidas,
+        paginas: resumen.paginas,
+        fallidas: resumen.fallidas.length,
+      }),
+    },
+  });
+}
+
 export async function obtenerEstadoDerco(): Promise<EstadoDerco> {
-  const [ultimo, total] = await Promise.all([
+  const [consulta, ultimoPrecio, total] = await Promise.all([
+    prisma.auditLog.findFirst({
+      where: { entityType: TIPO_CONSULTA },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, observation: true },
+    }),
     prisma.price.findFirst({
       where: { channel: CANAL_DERCO },
       orderBy: { createdAt: "desc" },
@@ -40,28 +87,87 @@ export async function obtenerEstadoDerco(): Promise<EstadoDerco> {
     prisma.price.count({ where: { channel: CANAL_DERCO, status: INFO_STATUS.ACTIVE } }),
   ]);
 
-  if (!ultimo) {
+  // Si nunca hubo consulta automatica, se usa el precio mas nuevo como
+  // referencia (es lo que dejaba el script manual).
+  const fecha = consulta?.createdAt ?? ultimoPrecio?.createdAt ?? null;
+
+  let ultimoResultado: EstadoDerco["ultimoResultado"] = null;
+  if (consulta?.observation) {
+    try {
+      const r = JSON.parse(consulta.observation);
+      ultimoResultado = {
+        preciosCambiados: Number(r.preciosCambiados) || 0,
+        versionesCalzadas: Number(r.versionesCalzadas) || 0,
+        sinCalce: Number(r.sinCalce) || 0,
+        incompleta: Boolean(r.incompleta),
+      };
+    } catch {
+      ultimoResultado = null;
+    }
+  }
+
+  if (!fecha) {
     return {
       ultimaActualizacion: null,
       horasDesdeActualizacion: null,
       necesitaActualizar: true,
       preciosGuardados: 0,
+      ultimoResultado,
       descripcion: "Nunca se han traído los precios publicados en derco.cl.",
     };
   }
 
-  const horas = (Date.now() - ultimo.createdAt.getTime()) / 3_600_000;
+  const horas = (Date.now() - fecha.getTime()) / 3_600_000;
   const necesita = horas >= HORAS_FRESCURA;
+  const hace = horas < 1 ? "hace menos de una hora" : `hace ${Math.floor(horas)} horas`;
 
   return {
-    ultimaActualizacion: ultimo.createdAt,
+    ultimaActualizacion: fecha,
     horasDesdeActualizacion: horas,
     necesitaActualizar: necesita,
     preciosGuardados: total,
+    ultimoResultado,
     descripcion: necesita
-      ? `Los precios de derco.cl se trajeron hace ${Math.floor(horas)} horas. Conviene actualizarlos.`
-      : `Precios de derco.cl actualizados hace ${horas < 1 ? "menos de una hora" : `${Math.floor(horas)} horas`}.`,
+      ? `derco.cl se revisó por última vez ${hace}. Conviene actualizar.`
+      : `derco.cl revisado ${hace}${
+          ultimoResultado ? ` · ${ultimoResultado.preciosCambiados} precios cambiaron en esa revisión` : ""
+        }.`,
   };
+}
+
+export type PreciosDerco = {
+  /** Precio de lista publicado. */
+  lista: number | null;
+  /** Precio con bonos publicado (el que la web destaca). */
+  conBonos: number | null;
+  /** Cuando se guardo el precio mas reciente de los dos. */
+  fecha: string | null;
+};
+
+/**
+ * Los precios publicados en derco.cl, por version.
+ *
+ * NO se filtran por mes comercial, a proposito: son "lo que la web
+ * muestra hoy". Si se filtraran, al cambiar el mes desaparecerian del
+ * comparativo todos los que no cambiaron de precio, justo cuando mas
+ * sirve compararlos.
+ */
+export async function preciosDercoVigentes(): Promise<Map<string, PreciosDerco>> {
+  const precios = await prisma.price.findMany({
+    where: { channel: CANAL_DERCO, status: INFO_STATUS.ACTIVE, priceType: { in: ["LIST", "CAMPAIGN"] } },
+    select: { versionId: true, priceType: true, amount: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const porVersion = new Map<string, PreciosDerco>();
+  for (const p of precios) {
+    const actual = porVersion.get(p.versionId) ?? { lista: null, conBonos: null, fecha: null };
+    if (p.priceType === "LIST" && actual.lista === null) actual.lista = p.amount;
+    if (p.priceType === "CAMPAIGN" && actual.conBonos === null) actual.conBonos = p.amount;
+    if (!actual.fecha) actual.fecha = p.createdAt.toISOString();
+    porVersion.set(p.versionId, actual);
+  }
+  return porVersion;
 }
 
 export type DiferenciaDerco = {

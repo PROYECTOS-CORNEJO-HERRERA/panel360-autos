@@ -3,7 +3,8 @@ import { EmptyState, Notice, PageHeader, Panel } from "@/components/ui";
 import { formatCLP } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
-import { mesesConPrecios, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { mesesConPrecios, precioPorTipo, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { preciosDercoVigentes } from "@/lib/derco/estado";
 import { AvisoMes } from "@/components/aviso-mes";
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export default async function QuotePage({ searchParams }: { searchParams?: Recor
   const meses = await mesesConPrecios();
   const mesEnUso = resolverMesEnUso(meses);
 
-  const [versions, customers, quotes] = await Promise.all([
+  const [versions, customers, quotes, dercoPorVersion] = await Promise.all([
     prisma.version.findMany({
       include: {
         brand: true,
@@ -41,14 +42,19 @@ export default async function QuotePage({ searchParams }: { searchParams?: Recor
       orderBy: [{ brand: { name: "asc" } }, { model: { name: "asc" } }, { commercialOrder: "asc" }, { name: "asc" }]
     }),
     prisma.customer.findMany({ orderBy: { updatedAt: "desc" }, take: 50 }),
-    prisma.quote.findMany({ include: { customer: true, items: true }, orderBy: { createdAt: "desc" }, take: 10 })
+    prisma.quote.findMany({ include: { customer: true, items: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+    preciosDercoVigentes()
   ]);
 
   const vehicles = versions.map((version) => {
-    const listPrice = version.prices.find((price) => price.priceType === "LIST")?.amount ?? null;
-    const campaignPrice = version.prices.find((price) => price.priceType === "CAMPAIGN")?.amount ?? null;
-    const cashPrice = version.prices.find((price) => price.priceType === "CASH")?.amount ?? null;
-    const financingPrice = version.prices.find((price) => price.priceType === "FINANCING")?.amount ?? null;
+    // Solo la lista INTERNA (canal REGULAR). Antes se tomaba el LIST mas
+    // reciente de cualquier canal, asi que un precio de derco.cl o de
+    // preventa podia aparecer en la hoja como si fuera el precio de lista.
+    const listPrice = precioPorTipo(version.prices, "LIST")?.amount ?? null;
+    const campaignPrice = precioPorTipo(version.prices, "CAMPAIGN")?.amount ?? null;
+    const cashPrice = precioPorTipo(version.prices, "CASH")?.amount ?? null;
+    const financingPrice = precioPorTipo(version.prices, "FINANCING")?.amount ?? null;
+    const derco = dercoPorVersion.get(version.id);
     return {
       id: version.id,
       label: `${version.brand.name} ${version.model.name} ${version.name}`,
@@ -62,6 +68,9 @@ export default async function QuotePage({ searchParams }: { searchParams?: Recor
       campaignPrice,
       cashPrice,
       financingPrice,
+      dercoListPrice: derco?.lista ?? null,
+      dercoCampaignPrice: derco?.conBonos ?? null,
+      dercoUpdatedAt: derco?.fecha ?? null,
       prices: version.prices.map((p) => ({
         priceType: p.priceType,
         amount: p.amount,

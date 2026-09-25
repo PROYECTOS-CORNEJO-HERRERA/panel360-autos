@@ -1,9 +1,13 @@
 import { compararMeses, ETIQUETA_TIPO, type TipoCambio } from "@/lib/comparacion-meses";
 import { obtenerEstadoDerco, diferenciasConDerco } from "@/lib/derco/estado";
 import { formatCLP } from "@/lib/format";
-import { EmptyState, PageHeader, Panel, StatusPill } from "@/components/ui";
+import { EmptyState, Notice, PageHeader, Panel, StatusPill } from "@/components/ui";
+import { RefreshCw } from "lucide-react";
+import { actualizarDercoAhora } from "./actions";
 
 export const dynamic = "force-dynamic";
+// El boton "Actualizar ahora" revisa derco.cl desde esta pagina.
+export const maxDuration = 60;
 
 // ============================================================
 // ¿QUE CAMBIO ESTE MES? (Bloque D)
@@ -53,6 +57,25 @@ export default async function CambiosPage({
 
   const visibles = filtro === "TODOS" ? resumen.cambios : resumen.cambios.filter((c) => c.tipo === filtro);
 
+  const valor = (clave: string) => {
+    const bruto = searchParams?.[clave];
+    return Array.isArray(bruto) ? bruto[0] : bruto;
+  };
+  const resultadoDerco = valor("derco");
+  let avisoDerco: string | null = null;
+  if (resultadoDerco === "error") {
+    avisoDerco = "No se pudo revisar derco.cl en este momento (la web no respondio). Se vuelve a intentar sola cada mañana.";
+  } else if (resultadoDerco === "ok") {
+    const cambiados = Number(valor("cambiados") ?? 0);
+    const calzadas = Number(valor("calzadas") ?? 0);
+    const sinCalce = Number(valor("sinCalce") ?? 0);
+    avisoDerco =
+      `derco.cl revisado: ${calzadas} versiones comparadas, ` +
+      (cambiados > 0 ? `${cambiados} precios cambiaron y ya estan actualizados.` : "ningun precio cambio.") +
+      (sinCalce > 0 ? ` ${sinCalce} versiones de la web no existen en el catalogo.` : "") +
+      (valor("incompleta") === "1" ? " No alcanzo a revisar todas las paginas: vuelve a apretar para completar." : "");
+  }
+
   const tarjetas: { tipo: TipoCambio | "TODOS"; etiqueta: string; cantidad: number }[] = [
     { tipo: "TODOS", etiqueta: "Todos", cantidad: resumen.cambios.length },
     { tipo: "SUBIO", etiqueta: "Subieron", cantidad: resumen.subieron },
@@ -79,12 +102,28 @@ export default async function CambiosPage({
             <h2 className="text-lg font-black text-ink">Precios publicados en derco.cl</h2>
             <p className="text-xs font-semibold text-steel">{estadoDerco.descripcion}</p>
           </div>
-          <StatusPill tone={diferenciasDerco.length > 0 ? "warn" : "good"}>
-            {estadoDerco.preciosGuardados === 0
-              ? "Sin datos"
-              : `${diferenciasDerco.length} diferencias`}
-          </StatusPill>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={diferenciasDerco.length > 0 ? "warn" : "good"}>
+              {estadoDerco.preciosGuardados === 0
+                ? "Sin datos"
+                : `${diferenciasDerco.length} diferencias`}
+            </StatusPill>
+            <form action={actualizarDercoAhora}>
+              <button className="btn btn-secondary px-3 py-1.5 text-xs" type="submit">
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                Actualizar ahora
+              </button>
+            </form>
+          </div>
         </div>
+        <p className="mt-2 text-xs font-semibold text-steel">
+          Se revisa sola todas las mañanas. El boton sirve si la marca avisa de una campaña nueva en la web.
+        </p>
+        {avisoDerco ? (
+          <div className="mt-3">
+            <Notice>{avisoDerco}</Notice>
+          </div>
+        ) : null}
 
         {diferenciasDerco.length > 0 && (
           <div className="mt-4 overflow-x-auto">

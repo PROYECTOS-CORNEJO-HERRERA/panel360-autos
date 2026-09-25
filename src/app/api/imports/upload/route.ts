@@ -1,7 +1,7 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { CONFIDENCE, INFO_STATUS } from "@/lib/constants";
-import { aprobarItemComoPrecio } from "@/lib/importers/aprobar-precios";
+import { aprobarLote } from "@/lib/importers/aprobar-precios";
 import { aplicarCodigosAlCatalogo } from "@/lib/importers/codigos-cit";
 import { extraerIndiceCodigos } from "@/lib/importers/excel";
 import { storeDocumentFile } from "@/lib/document-storage";
@@ -9,6 +9,10 @@ import { allowedDocumentExtensions, parseCommercialDocument } from "@/lib/import
 import { prisma } from "@/lib/prisma";
 import { sanitizeFilename } from "@/lib/safe-paths";
 import { normalizeText } from "@/lib/format";
+
+// Leer el Excel, aplicar los CIT y aprobar lo seguro no cabe en los 10 s
+// que Vercel da por omision.
+export const maxDuration = 60;
 
 const MONTH_NAMES = ["01-enero", "02-febrero", "03-marzo", "04-abril", "05-mayo", "06-junio", "07-julio", "08-agosto", "09-septiembre", "10-octubre", "11-noviembre", "12-diciembre"];
 const MAX_SIZE_BYTES = 25 * 1024 * 1024;
@@ -179,16 +183,15 @@ export async function POST(request: Request) {
     // proposito: son justamente las filas donde equivocarse cuesta caro
     // (un 19% de error por el IVA, o un precio pegado a la version
     // equivocada). Esas quedan para que una persona decida.
-    const candidatas = await prisma.updateItem.findMany({
+    const seguras = await prisma.updateItem.findMany({
       where: { updateId: update.id, category: "PRECIO", confidence: CONFIDENCE.HIGH },
-      select: { id: true }
+      include: { update: true }
     });
 
-    let aprobadosSolos = 0;
-    for (const candidata of candidatas) {
-      const resultado = await aprobarItemComoPrecio(candidata.id, "Aprobacion automatica");
-      if (resultado.ok) aprobadosSolos++;
-    }
+    // Con limite de tiempo: si la lista es enorme, lo que no alcance queda
+    // pendiente y se aprueba con el boton, en vez de cortar la carga.
+    const lote = await aprobarLote(seguras, { aprobadoPor: "Aprobacion automatica", presupuestoMs: 30_000 });
+    const aprobadosSolos = lote.aprobados;
 
     if (aprobadosSolos > 0) {
       const quedanPendientes = await prisma.updateItem.count({

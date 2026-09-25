@@ -2,180 +2,36 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { INFO_STATUS } from "../src/lib/constants";
 import { mesComercialActual } from "../src/lib/mes-comercial";
-import { parseMoney } from "../src/lib/format";
 import { prisma } from "../src/lib/prisma";
+import {
+  DERCO_VEHICLES_SITEMAP,
+  MARCAS_DERCO,
+  canonicalUrl,
+  parseDercoPage,
+  pricePairFromSpecs,
+  spec,
+  type ModelImport,
+  type VersionImport
+} from "../src/lib/derco/parser";
 import { assertInsideWorkspace, sanitizeFilename } from "../src/lib/safe-paths";
 import { createDatabaseBackup } from "../src/lib/services/backups";
 
-const DERCO_VEHICLES_SITEMAP = "https://www.derco.cl/sitemap-vehicles.xml";
-const allowedBrandSlugs = new Set(["suzuki", "mazda", "great-wall", "changan", "deepal", "dfsk"]);
+const allowedBrandSlugs = MARCAS_DERCO;
 const commercialMonth = "agosto 2026";
 
-type VersionImport = {
-  name: string;
-  imageUrl?: string;
-  specs: Record<string, string>;
-};
 
-type ModelImport = {
-  url: string;
-  brandName: string;
-  modelName: string;
-  modelTitle: string;
-  pdfUrls: string[];
-  versions: VersionImport[];
-};
 
-function decodeHtml(value: string) {
-  return value
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
-function stripTags(html: string) {
-  return decodeHtml(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-  );
-}
 
-function canonicalUrl(url: string) {
-  return url.replace(/\?.*$/, "");
-}
 
-function brandFromUrl(url: string) {
-  const match = canonicalUrl(url).match(/\/auto\/([^/]+)\//);
-  const slug = match?.[1] ?? "";
-  if (slug === "great-wall") return "GWM";
-  return slug.toUpperCase();
-}
 
-function modelNameFromTitle(title: string, brandName: string) {
-  const withoutBrand = title
-    .replace(/^GWM\s+/i, "")
-    .replace(/^Great Wall\s+/i, "")
-    .replace(new RegExp(`^${brandName}\\s+`, "i"), "")
-    .replace(/^Mazda\s+Mazda/i, "Mazda")
-    .trim();
-  return withoutBrand || title;
-}
 
-function cleanVersionName(versionName: string, modelName: string) {
-  const escaped = modelName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const cleaned = versionName.replace(new RegExp(`^${escaped}\\s+`, "i"), "").trim();
-  return cleaned || versionName;
-}
 
-function titleFromHtml(html: string) {
-  const h1 = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
-  return h1 ? stripTags(h1) : "";
-}
 
-function extractTable(html: string) {
-  const marker = html.indexOf("Detalle de Versiones");
-  if (marker < 0) return null;
-  const tableStart = html.indexOf("<table", marker);
-  if (tableStart < 0) return null;
-  const tableEnd = html.indexOf("</table>", tableStart);
-  if (tableEnd < 0) return null;
-  return html.slice(tableStart, tableEnd + "</table>".length);
-}
 
-function extractCells(rowHtml: string) {
-  return [...rowHtml.matchAll(/<(t[hd])\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((match) => ({
-    tag: match[1].toLowerCase(),
-    html: match[2],
-    text: stripTags(match[2]),
-    imageAlt: decodeHtml(match[2].match(/alt="([^"]+)"/i)?.[1] ?? ""),
-    imageUrl: decodeHtml(match[2].match(/url=(https%3A%2F%2F[^&"]+)/i)?.[1] ?? "")
-  }));
-}
 
-function parseDercoPage(url: string, html: string): ModelImport | null {
-  const brandName = brandFromUrl(url);
-  const title = titleFromHtml(html);
-  if (!title) return null;
-  const modelName = modelNameFromTitle(title, brandName);
-  const table = extractTable(html);
-  if (!table) return null;
 
-  const rows = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) => match[1]);
-  if (rows.length < 2) return null;
 
-  const headerCells = extractCells(rows[0]).slice(1);
-  const versions: VersionImport[] = headerCells
-    .map((cell) => {
-      const fromAlt = cell.imageAlt || "";
-      const text = cell.text.replace(/Cotizar ahora|Reservar ahora|Cotizar|Reservar/gi, "").trim();
-      const rawName = fromAlt || text;
-      return {
-        name: cleanVersionName(rawName, modelName),
-        imageUrl: cell.imageUrl ? decodeURIComponent(cell.imageUrl) : undefined,
-        specs: {}
-      };
-    })
-    .filter((version) => version.name);
-
-  if (!versions.length) return null;
-
-  for (const row of rows.slice(1)) {
-    const cells = extractCells(row);
-    if (cells.length < 2) continue;
-    const label = cells[0].text;
-    if (!label || /^consumo energético$/i.test(label)) continue;
-
-    cells.slice(1).forEach((cell, index) => {
-      const version = versions[index];
-      if (!version) return;
-      const value = cell.text;
-      if (!value) return;
-      version.specs[label] = value;
-    });
-  }
-
-  const pdfUrls = [...html.matchAll(/https:\/\/[^"'<>]+\.pdf/g)].map((match) => decodeHtml(match[0]));
-
-  return {
-    url: canonicalUrl(url),
-    brandName,
-    modelTitle: title,
-    modelName,
-    pdfUrls: [...new Set(pdfUrls)],
-    versions
-  };
-}
-
-function spec(specs: Record<string, string>, ...labels: string[]) {
-  const entries = Object.entries(specs);
-  for (const label of labels) {
-    const found = entries.find(([key]) => key.toLowerCase().includes(label.toLowerCase()));
-    if (found) return found[1];
-  }
-  return undefined;
-}
-
-function pricePair(value?: string) {
-  if (!value) return { campaign: null, list: null };
-  const prices = [...value.matchAll(/\$[\d.]+/g)].map((match) => parseMoney(match[0])).filter((item): item is number => item !== null);
-  return {
-    campaign: prices[0] ?? null,
-    list: prices[1] ?? null
-  };
-}
-
-function pricePairFromSpecs(specs: Record<string, string>) {
-  const entry = Object.entries(specs).find(([label]) => /precio\s+y\s+financiamiento/i.test(label));
-  return pricePair(entry?.[1]);
-}
 
 function positiveFeatureRows(specs: Record<string, string>) {
   const ignored = new Set([

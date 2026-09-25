@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { buscarVersion } from "@/lib/importers/aprobar-precios";
+import { cargarCandidatas, calzarVersion } from "@/lib/importers/aprobar-precios";
 import type { IndiceCodigos } from "@/lib/importers/excel";
 
 // ============================================================
@@ -32,12 +32,14 @@ export async function aplicarCodigosAlCatalogo(indice: IndiceCodigos): Promise<R
 
   const asignaciones = new Map<string, string>();
   const sinCalce: string[] = [];
+  // Una sola carga del catalogo para todos los codigos.
+  const candidatas = await cargarCandidatas();
 
   for (const entrada of indice.entradasCit) {
-    const version = await buscarVersion({
-      modelName: entrada.modelo || null,
-      versionName: entrada.version || null,
-    });
+    const version = calzarVersion(
+      { modelName: entrada.modelo || null, versionName: entrada.version || null },
+      candidatas
+    );
 
     if (!version) {
       const etiqueta = `${entrada.modelo} ${entrada.version}`.replace(/\s+/g, " ").trim();

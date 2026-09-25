@@ -15,6 +15,10 @@ function confidenceTone(confidence: string) {
   return "warn" as const;
 }
 
+// El boton "Aprobar" corre aqui. Con los 10 s por omision de Vercel no
+// alcanzaba a terminar una lista completa.
+export const maxDuration = 60;
+
 export default async function UpdatesPage({
   searchParams
 }: {
@@ -62,6 +66,12 @@ export default async function UpdatesPage({
       cit > 0
         ? `Se completaron ${cit} codigos CIT en el catalogo.`
         : "No se completo ningun codigo CIT: el archivo no traia codigos, o no calzaron con las versiones del catalogo."
+    );
+  }
+  const sinTiempo = leer("sinTiempo");
+  if (sinTiempo !== null && sinTiempo > 0) {
+    partes.push(
+      `${sinTiempo} filas no alcanzaron a procesarse en esta pasada. Aprieta "Aprobar" de nuevo: sigue donde quedo y no repite las ya aprobadas.`
     );
   }
   const citSinCalce = leer("citSinCalce");

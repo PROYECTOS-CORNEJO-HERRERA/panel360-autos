@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { INFO_STATUS } from "@/lib/constants";
 import { interpretarMesComercial, mesComercialActual } from "@/lib/mes-comercial";
@@ -54,8 +55,46 @@ function leerPayload(json: string | null): PayloadPrecio {
   }
 }
 
+/** Lo minimo del catalogo que hace falta para calzar una fila con una version. */
+export type CandidataVersion = {
+  id: string;
+  name: string;
+  sapCode: string | null;
+  brand: { name: string };
+  model: { name: string };
+};
+
+export type CriterioVersion = {
+  brandName?: string | null;
+  modelName?: string | null;
+  versionName?: string | null;
+  citCode?: string | null;
+};
+
 /**
- * Encuentra la version del catalogo a la que apunta una fila.
+ * Carga el catalogo UNA vez.
+ *
+ * Quien calza muchas filas seguidas (una lista completa, los codigos CIT,
+ * la actualizacion diaria de derco.cl) debe cargarlo antes y pasarlo.
+ * Antes cada fila volvia a traer el catalogo entero desde la base: una
+ * lista de 118 precios eran 118 cargas completas, y por eso el boton
+ * "Aprobar" se quedaba sin tiempo a mitad de camino.
+ */
+export function cargarCandidatas(): Promise<CandidataVersion[]> {
+  return prisma.version.findMany({
+    select: {
+      id: true,
+      name: true,
+      sapCode: true,
+      brand: { select: { name: true } },
+      model: { select: { name: true } },
+    },
+  });
+}
+
+/**
+ * Encuentra la version del catalogo a la que apunta una fila, sin tocar
+ * la base.
  *
  * Devuelve null si no hay UNA sola coincidencia clara. Es deliberado:
  * asociar un precio a la version equivocada es peor que no cargarlo,
@@ -63,27 +102,18 @@ function leerPayload(json: string | null): PayloadPrecio {
  * parece normal y no tiene como sospechar. Ante duda, la fila queda
  * pendiente y una persona decide.
  */
-export async function buscarVersion(params: {
-  brandName?: string | null;
-  modelName?: string | null;
-  versionName?: string | null;
-  citCode?: string | null;
-}): Promise<{ id: string } | null> {
+export function calzarVersion(params: CriterioVersion, candidatas: CandidataVersion[]): { id: string } | null {
   const { brandName, modelName, versionName, citCode } = params;
 
   // El codigo CIT identifica la version de forma exacta, asi que manda
   // sobre el calce por nombre. En marcas como DFSK el codigo viene en
   // otra hoja del Excel, y el indice del importador lo trae hasta aca.
   if (citCode) {
-    const porCodigo = await prisma.version.findMany({ where: { sapCode: citCode }, select: { id: true } });
+    const porCodigo = candidatas.filter((v) => v.sapCode === citCode);
     if (porCodigo.length === 1) return { id: porCodigo[0].id };
   }
 
   if (!modelName && !versionName) return null;
-
-  const candidatas = await prisma.version.findMany({
-    include: { brand: true, model: true },
-  });
 
   const nBrand = brandName ? normalizeText(brandName) : null;
   const nModel = modelName ? normalizeText(modelName) : null;
@@ -136,70 +166,79 @@ export async function buscarVersion(params: {
   return null;
 }
 
-/**
- * Convierte una fila aprobada en un precio vigente.
- *
- * Reemplaza el precio anterior del mismo tipo/canal/mes (no lo borra:
- * queda REEMPLAZADO, que es como el sistema conserva el historial) y
- * deja registro en PriceHistory.
- */
-export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string): Promise<ResultadoAprobacion> {
-  const item = await prisma.updateItem.findUnique({
-    where: { id: itemId },
-    include: { update: true },
-  });
+/** Igual que calzarVersion, pero carga el catalogo si no se lo pasan. */
+export async function buscarVersion(
+  params: CriterioVersion,
+  candidatas?: CandidataVersion[]
+): Promise<{ id: string } | null> {
+  return calzarVersion(params, candidatas ?? (await cargarCandidatas()));
+}
 
-  if (!item) return { ok: false, motivo: "La fila ya no existe." };
+type ItemConCarga = Prisma.UpdateItemGetPayload<{ include: { update: true } }>;
+
+/** Tipo y canal de precio de una fila, a partir de su etiqueta. */
+function tipoYCanal(item: { fieldName: string | null; payloadJson: string | null }) {
+  const etiqueta = normalizeText(item.fieldName ?? "");
+  const payload = leerPayload(item.payloadJson);
+  return {
+    priceType: TIPO_POR_ETIQUETA[etiqueta] ?? null,
+    channel: CANAL_POR_ETIQUETA[etiqueta] ?? payload.channel ?? "REGULAR",
+    payload,
+  };
+}
+
+/**
+ * Convierte UNA fila ya cargada en un precio vigente.
+ *
+ * Reemplaza el precio anterior del mismo tipo/canal (no lo borra: queda
+ * REEMPLAZADO, que es como el sistema conserva el historial) y deja
+ * registro en PriceHistory.
+ */
+async function aprobarItemCargado(
+  item: ItemConCarga,
+  candidatas: CandidataVersion[],
+  aprobadoPor?: string
+): Promise<ResultadoAprobacion> {
   if (item.category !== "PRECIO") return { ok: false, motivo: "Esta fila no es un precio." };
   if (!item.amount || item.amount <= 0) return { ok: false, motivo: "La fila no tiene un monto valido." };
 
-  const payloadItem = leerPayload(item.payloadJson);
-  const version = await buscarVersion({ ...item, citCode: payloadItem.citCode });
+  const { priceType, channel, payload } = tipoYCanal(item);
+  const version = calzarVersion({ ...item, citCode: payload.citCode }, candidatas);
+
   if (!version) {
     // No se adivina: se explica por que quedo pendiente.
+    const nombre = `${item.brandName ?? ""} ${item.modelName ?? ""} ${item.versionName ?? ""}`.replace(/\s+/g, " ").trim();
     await prisma.updateItem.update({
-      where: { id: itemId },
+      where: { id: item.id },
       data: {
         status: INFO_STATUS.IN_REVIEW,
-        ambiguityReason: `No se pudo identificar una unica version para "${`${item.brandName ?? ""} ${item.modelName ?? ""} ${item.versionName ?? ""}`.replace(/\s+/g, " ").trim()}" en el catalogo. Corrige el nombre o crea la version antes de aprobar.`,
+        ambiguityReason: `No se pudo identificar una unica version para "${nombre}" en el catalogo. Corrige el nombre o crea la version antes de aprobar.`,
       },
     });
     return { ok: false, motivo: "No se encontro una unica version que calce con esa fila." };
   }
 
+  if (!priceType) return { ok: false, motivo: `No se reconoce el tipo de precio "${item.fieldName}".` };
+
   // Si la lista traia el CIT y el catalogo no lo tenia, se completa. Asi
   // el codigo deja de faltar para el impuesto verde del SII sin que nadie
   // tenga que escribirlo a mano.
-  if (payloadItem.citCode) {
+  if (payload.citCode) {
     await prisma.version.updateMany({
       where: { id: version.id, OR: [{ sapCode: null }, { sapCode: "" }] },
-      data: { sapCode: payloadItem.citCode },
+      data: { sapCode: payload.citCode },
     });
   }
 
-  const etiqueta = normalizeText(item.fieldName ?? "");
-  const priceType = TIPO_POR_ETIQUETA[etiqueta];
-  if (!priceType) return { ok: false, motivo: `No se reconoce el tipo de precio "${item.fieldName}".` };
-
-  const payload = leerPayload(item.payloadJson);
-  const channel = CANAL_POR_ETIQUETA[etiqueta] ?? payload.channel ?? "REGULAR";
-
   // El mes sale del documento; si no se pudo leer, el del mes en curso.
   const mesComercial =
-    interpretarMesComercial(item.update.title) ??
-    interpretarMesComercial(item.rawText) ??
-    mesComercialActual();
+    interpretarMesComercial(item.update.title) ?? interpretarMesComercial(item.rawText) ?? mesComercialActual();
 
   const precio = await prisma.$transaction(async (tx) => {
-    // El anterior del mismo tipo/canal/mes pasa a REEMPLAZADO. No se
-    // borra: asi queda el historial y se puede comparar mes a mes.
+    // El anterior del mismo tipo/canal pasa a REEMPLAZADO. No se borra:
+    // asi queda el historial y se puede comparar mes a mes.
     const anterior = await tx.price.findFirst({
-      where: {
-        versionId: version.id,
-        priceType,
-        channel,
-        status: INFO_STATUS.ACTIVE,
-      },
+      where: { versionId: version.id, priceType, channel, status: INFO_STATUS.ACTIVE },
       orderBy: { effectiveFrom: "desc" },
     });
 
@@ -241,7 +280,7 @@ export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string
     });
 
     await tx.updateItem.update({
-      where: { id: itemId },
+      where: { id: item.id },
       data: { status: INFO_STATUS.ACTIVE, ambiguityReason: null },
     });
 
@@ -249,4 +288,78 @@ export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string
   });
 
   return { ok: true, precioId: precio.id, versionId: version.id };
+}
+
+/** Aprueba una sola fila por su id. Para varias, usar aprobarLote. */
+export async function aprobarItemComoPrecio(itemId: string, aprobadoPor?: string): Promise<ResultadoAprobacion> {
+  const item = await prisma.updateItem.findUnique({ where: { id: itemId }, include: { update: true } });
+  if (!item) return { ok: false, motivo: "La fila ya no existe." };
+  return aprobarItemCargado(item, await cargarCandidatas(), aprobadoPor);
+}
+
+export type ResultadoLote = {
+  aprobados: number;
+  pendientes: number;
+  /** Filas que no alcanzaron a procesarse dentro del tiempo disponible. */
+  sinProcesar: number;
+};
+
+/**
+ * Aprueba muchas filas de una vez, rapido y sin pasarse del tiempo.
+ *
+ * Tres cosas que antes hacian fallar el boton "Aprobar 118 precios":
+ *
+ *  1. Cada fila recargaba el catalogo completo. Ahora se carga una vez.
+ *  2. Las filas iban una por una, y cada una son varios viajes a la
+ *     base. Ahora van en paralelo -- pero agrupadas por version, tipo y
+ *     canal: dos filas que reemplazan EL MISMO precio nunca corren a la
+ *     vez, porque las dos verian el mismo "anterior" y quedarian dos
+ *     precios vigentes para lo mismo.
+ *  3. Si el tiempo no alcanza, se detiene ordenadamente y dice cuantas
+ *     quedaron, en vez de morir a la mitad sin avisar. Apretar de nuevo
+ *     sigue donde quedo: las ya aprobadas no se vuelven a tocar.
+ */
+export async function aprobarLote(
+  items: ItemConCarga[],
+  opciones: { aprobadoPor?: string; presupuestoMs?: number; concurrencia?: number } = {}
+): Promise<ResultadoLote> {
+  const inicio = Date.now();
+  const presupuesto = opciones.presupuestoMs ?? 40_000;
+  const concurrencia = opciones.concurrencia ?? 6;
+  const candidatas = await cargarCandidatas();
+
+  // Agrupar las filas que tocan el mismo precio.
+  const grupos = new Map<string, ItemConCarga[]>();
+  for (const item of items) {
+    const { priceType, channel, payload } = tipoYCanal(item);
+    const version = calzarVersion({ ...item, citCode: payload.citCode }, candidatas);
+    const clave = version && priceType ? `${version.id}|${priceType}|${channel}` : `suelta|${item.id}`;
+    const grupo = grupos.get(clave);
+    if (grupo) grupo.push(item);
+    else grupos.set(clave, [item]);
+  }
+
+  const cola = [...grupos.values()];
+  let aprobados = 0;
+  let pendientes = 0;
+  let sinProcesar = 0;
+
+  async function trabajador() {
+    for (;;) {
+      const grupo = cola.shift();
+      if (!grupo) return;
+      if (Date.now() - inicio > presupuesto) {
+        sinProcesar += grupo.length;
+        continue;
+      }
+      for (const item of grupo) {
+        const resultado = await aprobarItemCargado(item, candidatas, opciones.aprobadoPor);
+        if (resultado.ok) aprobados++;
+        else pendientes++;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrencia, cola.length || 1) }, trabajador));
+  return { aprobados, pendientes, sinProcesar };
 }
