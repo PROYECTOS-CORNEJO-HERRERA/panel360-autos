@@ -122,7 +122,7 @@ export function VitokoAssistant() {
   const primaryInsight = brief?.insights[0];
 
   return (
-    <div className="no-print fixed bottom-4 right-4 z-40 sm:bottom-5 sm:right-5">
+    <div className="asistente-flotante no-print fixed bottom-4 right-4 z-40 transition-[bottom] sm:bottom-5 sm:right-5">
       {isOpen && !isMinimized ? (
         <section
           role="dialog"

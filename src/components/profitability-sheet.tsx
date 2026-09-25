@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Download, ExternalLink, FolderOpen, Mail, Printer, RotateCcw, Save, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, ExternalLink, FolderOpen, Mail, Printer, RotateCcw, Save, Search, Trash2 } from "lucide-react";
+import { ComparativoDerco } from "@/components/comparativo-derco";
 import { formatCLP } from "@/lib/format";
 import { sendRentabilidadEmail } from "@/app/rentabilidad/email-action";
 import { saveProfitabilitySheet, deleteProfitabilitySheet, type SavedSheetSummary } from "@/app/rentabilidad/sheet-actions";
@@ -20,6 +21,10 @@ export type ProfitabilityVehicle = {
   campaignPrice: number | null;
   cashPrice?: number | null;
   financingPrice?: number | null;
+  /** Precios publicados en derco.cl (canal aparte, nunca la lista interna). */
+  dercoListPrice?: number | null;
+  dercoCampaignPrice?: number | null;
+  dercoUpdatedAt?: string | null;
   prices?: Array<{
     priceType: string;
     amount: number;
@@ -207,10 +212,16 @@ function estimateCirculationPermit(netPrice: number, invoiceDate: string) {
   return round((annualPermit / 12) * (13 - month));
 }
 
-function numberValue(value: string) {
-  return Number.parseInt(value || "0", 10) || 0;
+
+// Separador de miles propio: toLocaleString puede dar distinto en el
+// servidor y en el navegador, y eso rompe la hidratacion de React.
+function miles(value: number) {
+  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+// Campo de plata compacto: el monto se ve con separador de miles DENTRO
+// del mismo campo. Antes llevaba una segunda linea debajo repitiendo el
+// monto, y cada campo ocupaba el doble de alto.
 function MoneyInput({
   label,
   value,
@@ -222,11 +233,30 @@ function MoneyInput({
   onChange: (value: number) => void;
   helper?: string;
 }) {
+  const [enfocado, setEnfocado] = useState(false);
+  // Mientras se escribe se muestran solo digitos (el cursor no salta);
+  // al salir del campo, con puntos.
+  const mostrado = enfocado ? (value ? String(value) : "") : value ? miles(value) : "";
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase text-steel">{label}</span>
-      <input className="input" type="number" inputMode="numeric" value={value || ""} onChange={(event) => onChange(numberValue(event.target.value))} />
-      <span className="text-xs font-semibold text-steel">{helper ?? formatCLP(value)}</span>
+    <label className="grid min-w-0 gap-1">
+      <span className="truncate text-[11px] font-black uppercase tracking-wide text-steel" title={label}>
+        {label}
+      </span>
+      <span className="relative block">
+        <span aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-steel">
+          $
+        </span>
+        <input
+          className="input py-2 pl-6 pr-2.5 text-right text-sm font-bold tabular-nums"
+          inputMode="numeric"
+          value={mostrado}
+          placeholder="0"
+          onFocus={() => setEnfocado(true)}
+          onBlur={() => setEnfocado(false)}
+          onChange={(event) => onChange(Number.parseInt(event.target.value.replace(/\D/g, "") || "0", 10))}
+        />
+      </span>
+      {helper ? <span className="text-[11px] font-semibold leading-4 text-steel">{helper}</span> : null}
     </label>
   );
 }
@@ -245,18 +275,57 @@ function TextInput({
   type?: string;
 }) {
   return (
-    <label className="grid gap-1.5">
-      <span className="text-xs font-black uppercase text-steel">{label}</span>
-      <input className="input" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    <label className="grid min-w-0 gap-1">
+      <span className="truncate text-[11px] font-black uppercase tracking-wide text-steel" title={label}>
+        {label}
+      </span>
+      <input className="input py-2 text-sm" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
 
+/** Un bloque de campos con titulo. Dos columnas incluso en el celular:
+ *  un monto cabe de sobra en media pantalla, y la hoja queda la mitad
+ *  de larga. */
+function Grupo({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="mb-1 text-xs font-black uppercase text-ink">{titulo}</legend>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-3 xl:grid-cols-3">{children}</div>
+    </fieldset>
+  );
+}
+
+function Indicador({ etiqueta, valor, destacado = false }: { etiqueta: string; valor: string; destacado?: boolean }) {
+  return (
+    <div className={destacado ? "min-w-0 rounded-lg bg-ink p-2.5 text-white" : "min-w-0 rounded-lg bg-mist p-2.5"}>
+      <p className={destacado ? "truncate text-[10px] font-black uppercase text-white/70" : "truncate text-[10px] font-black uppercase text-steel"}>
+        {etiqueta}
+      </p>
+      <p className={destacado ? "mt-0.5 truncate text-sm font-black tabular-nums" : "mt-0.5 truncate text-sm font-black tabular-nums text-ink"}>
+        {valor}
+      </p>
+    </div>
+  );
+}
+
+const CHIP =
+  "shrink-0 rounded-full border border-graphite/20 px-3 py-1 text-xs font-bold text-graphite transition hover:bg-mist";
+const CHIP_ACTIVO = "shrink-0 rounded-full border border-teal-600 bg-teal-600 px-3 py-1 text-xs font-bold text-white";
+
+type Pestana = "venta" | "ingresos" | "descuentos" | "retoma" | "impuestos";
+
 function SummaryLine({ label, value, strong = false }: { label: string; value: number | string; strong?: boolean }) {
   return (
-    <div className={strong ? "flex items-center justify-between gap-4 border-t border-graphite/10 pt-3 text-base font-black text-ink" : "flex items-center justify-between gap-4 text-sm font-semibold text-graphite"}>
-      <span>{label}</span>
-      <span>{typeof value === "number" ? formatCLP(value) : value}</span>
+    <div
+      className={
+        strong
+          ? "flex items-baseline justify-between gap-3 border-t border-graphite/10 pt-1.5 text-sm font-black text-ink"
+          : "flex items-baseline justify-between gap-3 text-xs font-semibold text-graphite"
+      }
+    >
+      <span className="min-w-0">{label}</span>
+      <span className="shrink-0 tabular-nums">{typeof value === "number" ? formatCLP(value) : value}</span>
     </div>
   );
 }
@@ -337,6 +406,7 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
   const [vehicleQuery, setVehicleQuery] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pestana, setPestana] = useState<Pestana>("venta");
 
   const selectedVehicle = vehicles.find((vehicle) => vehicle.id === state.selectedVersionId) ?? null;
 
@@ -741,393 +811,480 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
     }
   };
 
-  return (
-    <div className="grid gap-6">
-      <section className="panel no-print rounded-lg p-5">
-        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="grid gap-3 md:grid-cols-2">
-            {!hideVehicleSelector ? (
-              <div className="grid gap-2 md:col-span-2">
-                <span className="text-xs font-black uppercase text-steel">Vehiculo</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setBrandFilter("")}
-                    className={
-                      brandFilter === ""
-                        ? "rounded-full border border-teal-600 bg-teal-600 px-3 py-1 text-xs font-bold text-white"
-                        : "rounded-full border border-graphite/20 px-3 py-1 text-xs font-bold text-graphite transition hover:bg-mist"
-                    }
-                  >
-                    Todas
-                  </button>
-                  {brandOptions.map((brand) => (
-                    <button
-                      key={brand}
-                      type="button"
-                      onClick={() => setBrandFilter((current) => (current === brand ? "" : brand))}
-                      className={
-                        brandFilter === brand
-                          ? "rounded-full border border-teal-600 bg-teal-600 px-3 py-1 text-xs font-bold text-white"
-                          : "rounded-full border border-graphite/20 px-3 py-1 text-xs font-bold text-graphite transition hover:bg-mist"
-                      }
-                    >
-                      {brand}
-                    </button>
-                  ))}
-                </div>
-                <span className="relative block">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel" aria-hidden="true" />
-                  <input
-                    className="input pl-9"
-                    value={vehicleQuery}
-                    onChange={(event) => setVehicleQuery(event.target.value)}
-                    placeholder="Buscar por marca, modelo, version o Codigo CIT..."
-                    aria-label="Buscar vehiculo"
-                    autoComplete="off"
-                  />
-                </span>
-                <select className="input" value={state.selectedVersionId} onChange={(event) => selectVehicle(event.target.value)} aria-label="Seleccionar version">
-                  <option value="">
-                    {filteredVehicles.length ? "Selecciona marca, modelo y version" : "Sin resultados para el filtro"}
-                  </option>
-                  {filteredVehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>
-                      {vehicle.label} {vehicle.citCode ? `| CIT ${vehicle.citCode}` : "| CIT pendiente"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-            <TextInput label="Nota venta" value={state.orderNumber} onChange={(value) => update("orderNumber", value)} placeholder="Nro. nota venta" />
-            <TextInput label="Interno" value={state.internalNumber} onChange={(value) => update("internalNumber", value)} placeholder="Interno o unidad" />
-            <TextInput label="Cliente" value={state.customerName} onChange={(value) => update("customerName", value)} placeholder="Nombre cliente" />
-            <TextInput label="Correo cliente" type="email" value={state.customerEmail} onChange={(value) => update("customerEmail", value)} placeholder="correo@cliente.cl" />
-            <TextInput label="Correo jefatura (autorizacion)" type="email" value={state.jefaturaEmail} onChange={(value) => update("jefaturaEmail", value)} placeholder="jefatura@sergioescobar.cl" />
-            <TextInput label="Fecha factura" type="date" value={state.invoiceDate} onChange={(value) => update("invoiceDate", value)} />
-          </div>
+  // ============================================================
+  // PANTALLA
+  // ============================================================
+  //
+  // Antes era una sola columna larguisima: en el celular habia que bajar
+  // por mas de 40 campos, cada uno con su etiqueta y una linea de ayuda
+  // repitiendo el monto, para recien ver el resultado al final.
+  //
+  // Ahora:
+  //  - los campos se agrupan en pestañas (una cosa a la vez),
+  //  - los montos se escriben con separador de miles en el mismo campo,
+  //    sin una segunda linea repitiendolos (la mitad de alto),
+  //  - el resultado queda siempre a la vista: a la derecha en pantallas
+  //    grandes, y en una barra fija abajo en el celular.
+  const pestanas: { clave: Pestana; etiqueta: string; monto?: number }[] = [
+    { clave: "venta", etiqueta: "Venta y cliente" },
+    { clave: "ingresos", etiqueta: "Ingresos", monto: totals.totalIncome },
+    { clave: "descuentos", etiqueta: "Descuentos", monto: totals.totalDiscounts },
+    { clave: "retoma", etiqueta: "Retoma y crédito" },
+    { clave: "impuestos", etiqueta: "Impuestos" },
+  ];
 
-          <div className="rounded-lg border border-graphite/10 bg-white p-4">
-            <p className="text-xs font-black uppercase text-copper">Datos para consultas externas</p>
-            <div className="mt-3 grid gap-3 text-sm font-semibold text-graphite">
-              <div>
-                <p className="font-black text-ink">Permiso circulacion</p>
-                <p>Usar Precio Lista Final neto y fecha factura de hoy.</p>
-                <p className="mt-1 rounded-lg bg-mist p-2 text-xs">{lasCondesText}</p>
-              </div>
-              <div>
-                <p className="font-black text-ink">Imp. Fuentes Movs.</p>
-                <p>Usar marca, modelo, Codigo CIT y precio venta con IVA.</p>
-                <p className="mt-1 rounded-lg bg-mist p-2 text-xs">{siiText}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn btn-primary" type="button" onClick={consultPermit} disabled={loadingPermit || !totals.priceListFinalNet}>
-                  {loadingPermit ? "Consultando..." : "Consultar permiso"}
+  const rentabilidadTexto = `${(totals.marginRatio * 100).toFixed(2)}%`;
+
+  return (
+    <div className="grid gap-4 pb-24 lg:pb-0">
+      {/* ---------- Vehiculo y acciones ---------- */}
+      <section className="panel no-print rounded-lg p-4 sm:p-5">
+        {!hideVehicleSelector ? (
+          <div className="grid gap-2">
+            <div className="sin-barra -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+              <button
+                type="button"
+                onClick={() => setBrandFilter("")}
+                className={brandFilter === "" ? CHIP_ACTIVO : CHIP}
+              >
+                Todas
+              </button>
+              {brandOptions.map((brand) => (
+                <button
+                  key={brand}
+                  type="button"
+                  onClick={() => setBrandFilter((current) => (current === brand ? "" : brand))}
+                  className={brandFilter === brand ? CHIP_ACTIVO : CHIP}
+                >
+                  {brand}
                 </button>
-                <button className="btn btn-secondary" type="button" onClick={() => copyText(lasCondesText)}>
-                  <Copy className="h-4 w-4" aria-hidden="true" />
-                  Copiar permiso
-                </button>
-                <button className="btn btn-secondary" type="button" onClick={() => estimatedPermit !== null && update("circulationPermit", estimatedPermit)} disabled={estimatedPermit === null}>
-                  Usar estimado
-                </button>
-                <a className="btn btn-secondary" href="https://www.lascondesonline.cl/Permisos%20Circulacion/asp/convalper.asp" target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                  Las Condes
-                </a>
-                <button className="btn btn-primary" type="button" onClick={consultGreenTax} disabled={loadingGreenTax || !selectedVehicle?.citCode || !siiSalePrice}>
-                  {loadingGreenTax ? "Calculando..." : "Calcular impuesto verde"}
-                </button>
-                <button className="btn btn-secondary" type="button" onClick={() => copyText(siiText)}>
-                  <Copy className="h-4 w-4" aria-hidden="true" />
-                  Copiar SII
-                </button>
-                <a className="btn btn-secondary" href="https://www4.sii.cl/calcImpVehiculoNuevoInternet/internet.html" target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                  SII
-                </a>
-              </div>
-              {permitStatus ? <p className="rounded-lg bg-mist p-2 text-xs font-bold text-graphite">{permitStatus}</p> : null}
-              {greenTaxStatus ? <p className="rounded-lg bg-mist p-2 text-xs font-bold text-graphite">{greenTaxStatus}</p> : null}
+              ))}
+            </div>
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+              <span className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel" aria-hidden="true" />
+                <input
+                  className="input py-2 pl-9 text-sm"
+                  value={vehicleQuery}
+                  onChange={(event) => setVehicleQuery(event.target.value)}
+                  placeholder="Buscar modelo, versión o CIT"
+                  aria-label="Buscar vehiculo"
+                  autoComplete="off"
+                />
+              </span>
+              <select
+                className="input py-2 text-sm"
+                value={state.selectedVersionId}
+                onChange={(event) => selectVehicle(event.target.value)}
+                aria-label="Seleccionar version"
+              >
+                <option value="">{filteredVehicles.length ? "Selecciona la versión" : "Sin resultados para el filtro"}</option>
+                {filteredVehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {vehicle.label} {vehicle.citCode ? `| CIT ${vehicle.citCode}` : "| CIT pendiente"}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        </div>
-      </section>
+        ) : null}
 
-      <section className="print-page panel rounded-lg p-5">
-        <div className="flex flex-col gap-4 border-b border-graphite/10 pb-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase text-copper">Informe de rentabilidad</p>
-            <h2 className="mt-1 text-2xl font-black text-ink">{selectedVehicle?.label ?? "Vehiculo no seleccionado"}</h2>
-            <p className="mt-1 text-sm font-semibold text-steel">
-              Nota venta: {state.orderNumber || "-"} | Interno: {state.internalNumber || "-"} | Fecha factura: {state.invoiceDate}
-            </p>
-            <p className="mt-1 text-sm font-semibold text-steel">
-              Cliente: {state.customerName || "-"} | Codigo CIT: {selectedVehicle?.citCode ?? "Pendiente en lista"}
-            </p>
-          </div>
-          <div className="no-print flex flex-col items-end gap-2">
-            <div className="flex flex-wrap justify-end gap-2">
-              <button className="btn btn-secondary" type="button" onClick={() => setState({ ...defaultState, invoiceDate: today })}>
+        <div className={hideVehicleSelector ? "" : "mt-4 border-t border-graphite/10 pt-4"}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-wide text-copper">Hoja de rentabilidad</p>
+              <h2 className="mt-0.5 truncate text-lg font-black text-ink sm:text-xl" title={selectedVehicle?.label}>
+                {selectedVehicle?.label ?? "Elige un vehículo"}
+              </h2>
+              <p className="mt-0.5 text-xs font-semibold text-steel">
+                CIT: {selectedVehicle?.citCode ?? "pendiente"} · Factura: {state.invoiceDate || "-"}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <button className="btn btn-primary px-3 py-2 text-sm" type="button" onClick={handleSaveSheet} disabled={saving}>
+                <Save className="h-4 w-4" aria-hidden="true" />
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+              <button className="btn btn-secondary px-3 py-2 text-sm" type="button" onClick={printSheet} title='Para PDF, elige "Guardar como PDF" en el diálogo'>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Imprimir / PDF
+              </button>
+              <button className="btn btn-secondary px-3 py-2 text-sm" type="button" onClick={handleSendEmail} disabled={sendingEmail}>
+                <Mail className="h-4 w-4" aria-hidden="true" />
+                {sendingEmail ? "Enviando..." : "A jefatura"}
+              </button>
+              <button className="btn btn-secondary px-3 py-2 text-sm" type="button" onClick={() => setState({ ...defaultState, invoiceDate: today })}>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
                 Limpiar
               </button>
-              <button className="btn btn-primary" type="button" onClick={handleSaveSheet} disabled={saving}>
-                <Save className="h-4 w-4" aria-hidden="true" />
-                {saving ? "Guardando..." : "Guardar hoja"}
-              </button>
-              <button className="btn btn-secondary" type="button" onClick={printSheet}>
-                <Printer className="h-4 w-4" aria-hidden="true" />
-                Imprimir
-              </button>
-              <button className="btn btn-primary" type="button" onClick={printSheet} title='En el dialogo elige destino "Guardar como PDF"'>
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Descargar PDF
-              </button>
-              <button className="btn btn-secondary" type="button" onClick={handleSendEmail} disabled={sendingEmail}>
-                <Mail className="h-4 w-4" aria-hidden="true" />
-                {sendingEmail ? "Enviando..." : "Enviar a jefatura"}
-              </button>
             </div>
-            {emailStatus ? <p className="text-xs font-bold text-graphite">{emailStatus}</p> : null}
-            {saveStatus ? <p className="text-xs font-bold text-graphite">{saveStatus}</p> : null}
           </div>
+          {emailStatus || saveStatus ? (
+            <div className="mt-2 grid gap-1 text-xs font-bold text-graphite">
+              {emailStatus ? <p>{emailStatus}</p> : null}
+              {saveStatus ? <p>{saveStatus}</p> : null}
+            </div>
+          ) : null}
         </div>
+      </section>
 
-        <div className="mt-5 grid items-start gap-5 xl:grid-cols-[1fr_0.8fr]">
-          <div className="grid content-start gap-5">
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Ingresos</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <MoneyInput label="Precio Lista Unidad" value={state.priceListGross} onChange={(value) => update("priceListGross", value)} />
-                <MoneyInput label="ZQDA Bono Marca" value={state.brandBonusGross} onChange={(value) => update("brandBonusGross", value)} />
-                <MoneyInput label="Flete Osorno" value={state.fleteOsorno} onChange={(value) => update("fleteOsorno", value)} />
-                <MoneyInput label="Pisos de goma" value={state.rubberFloor} onChange={(value) => update("rubberFloor", value)} />
-                <MoneyInput label="Set de Seguridad" value={state.safetyKit} onChange={(value) => update("safetyKit", value)} />
-                <MoneyInput label="Trins" value={state.trins} onChange={(value) => update("trins", value)} />
-                <MoneyInput label="ACC Grabado PPU + Gardex" value={state.accGrabado} onChange={(value) => update("accGrabado", value)} />
-                <MoneyInput label="Mantencion" value={state.maintenance} onChange={(value) => update("maintenance", value)} />
-                <MoneyInput label="Intereses / gastos" value={state.interests} onChange={(value) => update("interests", value)} />
-                <MoneyInput label="Otros" value={state.others} onChange={(value) => update("others", value)} />
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">No facturables</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <MoneyInput label="Inscripcion" value={state.registration} onChange={(value) => update("registration", value)} />
-                <MoneyInput label="Imp. Fuentes Movs." value={state.greenTax} onChange={(value) => update("greenTax", value)} helper="Impuesto verde informado por SII" />
-                <MoneyInput label="Seguro Obligatorio" value={state.soap} onChange={(value) => update("soap", value)} />
-                <MoneyInput label="Permiso Circulacion" value={state.circulationPermit} onChange={(value) => update("circulationPermit", value)} helper="Resultado de Las Condes" />
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Descuentos</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <MoneyInput label="ZQDV Desct. S. Escobar" value={state.discountSergio} onChange={(value) => update("discountSergio", value)} />
-                <MoneyInput label="Z104 Amicar S. Escobar" value={state.amicarSergio} onChange={(value) => update("amicarSergio", value)} />
-                <MoneyInput label="Z127 Amicar Marca" value={state.amicarMarca} onChange={(value) => update("amicarMarca", value)} />
-                <MoneyInput label="Z126 Aporte adic. Marca" value={state.aporteAdicMarca} onChange={(value) => update("aporteAdicMarca", value)} />
-                <MoneyInput label="Z124 Aporte Ptte. Marca" value={state.aportePtteMarca} onChange={(value) => update("aportePtteMarca", value)} />
-                <MoneyInput label="Retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
-              </div>
-            </div>
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Retoma</h3>
-              <p className="mt-1 text-xs font-semibold text-steel">Los datos del vehiculo que entrega el cliente. Salen en la caja RETOMA del informe.</p>
-              <div className="mt-4 grid gap-4">
-                <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
-                <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
-                <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
-                <MoneyInput label="Tasacion" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
-                <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
-                <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Credito</h3>
-              <div className="mt-4 grid gap-4">
-                <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
-                <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
-                <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
-                <MoneyInput label="Margen credito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
-              </div>
-            </div>
-
+      {/* ---------- Formulario + resultado ---------- */}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="panel no-print min-w-0 rounded-lg p-3 sm:p-5">
+          <div className="sin-barra -mx-1 flex gap-1 overflow-x-auto px-1 pb-2" role="tablist" aria-label="Secciones de la hoja">
+            {pestanas.map((p) => (
+              <button
+                key={p.clave}
+                type="button"
+                role="tab"
+                aria-selected={pestana === p.clave}
+                onClick={() => setPestana(p.clave)}
+                className={
+                  pestana === p.clave
+                    ? "shrink-0 rounded-lg bg-ink px-3 py-2 text-left text-xs font-black text-white"
+                    : "shrink-0 rounded-lg border border-graphite/15 bg-white px-3 py-2 text-left text-xs font-bold text-graphite hover:bg-mist"
+                }
+              >
+                <span className="block whitespace-nowrap">{p.etiqueta}</span>
+                {p.monto !== undefined ? (
+                  <span className={pestana === p.clave ? "block text-[11px] font-semibold text-white/70" : "block text-[11px] font-semibold text-steel"}>
+                    {formatCLP(p.monto)}
+                  </span>
+                ) : null}
+              </button>
+            ))}
           </div>
 
-          <aside className="grid content-start gap-5">
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Resumen</h3>
-              <div className="mt-4 grid gap-3">
-                <SummaryLine label="Precio Lista Final bruto" value={totals.priceListFinalGross} />
-                <SummaryLine label="Precio Lista Final neto" value={totals.priceListFinalNet} />
-                <SummaryLine label="Ingresos facturables bruto" value={totals.invoiceableGross} />
-                <SummaryLine label="Ingresos facturables neto" value={totals.invoiceableNet} />
+          <div className="mt-2" role="tabpanel">
+            {pestana === "venta" ? (
+              <div className="grid gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <TextInput label="Nota venta" value={state.orderNumber} onChange={(value) => update("orderNumber", value)} placeholder="Nro." />
+                  <TextInput label="Interno" value={state.internalNumber} onChange={(value) => update("internalNumber", value)} placeholder="Unidad" />
+                </div>
+                <TextInput label="Cliente" value={state.customerName} onChange={(value) => update("customerName", value)} placeholder="Nombre del cliente" />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <TextInput label="Correo cliente" type="email" value={state.customerEmail} onChange={(value) => update("customerEmail", value)} placeholder="correo@cliente.cl" />
+                  <TextInput label="Correo jefatura" type="email" value={state.jefaturaEmail} onChange={(value) => update("jefaturaEmail", value)} placeholder="jefatura@sergioescobar.cl" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <TextInput label="Fecha factura" type="date" value={state.invoiceDate} onChange={(value) => update("invoiceDate", value)} />
+                  <label className="grid min-w-0 gap-1">
+                    <span className="truncate text-[11px] font-black uppercase tracking-wide text-steel">Margen unidad %</span>
+                    <input
+                      className="input py-2 text-right text-sm font-bold"
+                      type="number"
+                      inputMode="decimal"
+                      value={state.marginPercent}
+                      onChange={(event) => update("marginPercent", Number.parseFloat(event.target.value) || 0)}
+                    />
+                  </label>
+                </div>
+                <label className="grid gap-1">
+                  <span className="text-[11px] font-black uppercase tracking-wide text-steel">Notas internas</span>
+                  <textarea className="input min-h-20 py-2 text-sm" value={state.notes} onChange={(event) => update("notes", event.target.value)} />
+                </label>
+              </div>
+            ) : null}
+
+            {pestana === "ingresos" ? (
+              <div className="grid gap-4">
+                <Grupo titulo="Precio del vehículo">
+                  <MoneyInput label="Precio lista unidad" value={state.priceListGross} onChange={(value) => update("priceListGross", value)} />
+                  <MoneyInput label="ZQDA bono marca" value={state.brandBonusGross} onChange={(value) => update("brandBonusGross", value)} />
+                </Grupo>
+                <Grupo titulo="Se suman (facturables)">
+                  <MoneyInput label="Flete" value={state.fleteOsorno} onChange={(value) => update("fleteOsorno", value)} />
+                  <MoneyInput label="Pisos de goma" value={state.rubberFloor} onChange={(value) => update("rubberFloor", value)} />
+                  <MoneyInput label="Set de seguridad" value={state.safetyKit} onChange={(value) => update("safetyKit", value)} />
+                  <MoneyInput label="Trins" value={state.trins} onChange={(value) => update("trins", value)} />
+                  <MoneyInput label="Accesorios (grabado)" value={state.accGrabado} onChange={(value) => update("accGrabado", value)} />
+                  <MoneyInput label="Mantención" value={state.maintenance} onChange={(value) => update("maintenance", value)} />
+                  <MoneyInput label="Intereses" value={state.interests} onChange={(value) => update("interests", value)} />
+                  <MoneyInput label="Otros" value={state.others} onChange={(value) => update("others", value)} />
+                </Grupo>
+                <Grupo titulo="No facturables">
+                  <MoneyInput label="Inscripción" value={state.registration} onChange={(value) => update("registration", value)} />
+                  <MoneyInput label="Imp. fuentes móvs." value={state.greenTax} onChange={(value) => update("greenTax", value)} />
+                  <MoneyInput label="Seguro obligatorio" value={state.soap} onChange={(value) => update("soap", value)} />
+                  <MoneyInput label="Permiso circulación" value={state.circulationPermit} onChange={(value) => update("circulationPermit", value)} />
+                </Grupo>
+                <p className="text-[11px] font-semibold text-steel">
+                  El impuesto verde y el permiso se calculan en la pestaña <strong>Impuestos</strong>.
+                </p>
+              </div>
+            ) : null}
+
+            {pestana === "descuentos" ? (
+              <Grupo titulo="Descuentos">
+                <MoneyInput label="ZQDV desct. S. Escobar" value={state.discountSergio} onChange={(value) => update("discountSergio", value)} />
+                <MoneyInput label="Z104 Amicar S. Escobar" value={state.amicarSergio} onChange={(value) => update("amicarSergio", value)} />
+                <MoneyInput label="Z127 Amicar marca" value={state.amicarMarca} onChange={(value) => update("amicarMarca", value)} />
+                <MoneyInput label="Z126 aporte adic. marca" value={state.aporteAdicMarca} onChange={(value) => update("aporteAdicMarca", value)} />
+                <MoneyInput label="Z124 aporte ptte. marca" value={state.aportePtteMarca} onChange={(value) => update("aportePtteMarca", value)} />
+              </Grupo>
+            ) : null}
+
+            {pestana === "retoma" ? (
+              <div className="grid gap-4">
+                <Grupo titulo="Retoma">
+                  <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
+                  <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
+                  <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
+                  <MoneyInput label="Tasación" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
+                  <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
+                  <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
+                </Grupo>
+                <Grupo titulo="Crédito">
+                  <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
+                  <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
+                  <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
+                  <MoneyInput label="Margen crédito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
+                </Grupo>
+              </div>
+            ) : null}
+
+            {pestana === "impuestos" ? (
+              <div className="grid gap-4">
+                <div className="rounded-lg border border-graphite/10 bg-white p-3">
+                  <p className="text-xs font-black uppercase text-ink">Permiso de circulación</p>
+                  <p className="mt-1 text-xs font-semibold text-steel">Con el precio lista final neto y la fecha de factura.</p>
+                  <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{lasCondesText}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                    <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultPermit} disabled={loadingPermit || !totals.priceListFinalNet}>
+                      {loadingPermit ? "Consultando..." : "Consultar"}
+                    </button>
+                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => estimatedPermit !== null && update("circulationPermit", estimatedPermit)} disabled={estimatedPermit === null}>
+                      Usar estimado
+                    </button>
+                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(lasCondesText)}>
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      Copiar
+                    </button>
+                    <a className="btn btn-secondary px-3 py-2 text-xs" href="https://www.lascondesonline.cl/Permisos%20Circulacion/asp/convalper.asp" target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                      Las Condes
+                    </a>
+                  </div>
+                  {permitStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{permitStatus}</p> : null}
+                </div>
+
+                <div className="rounded-lg border border-graphite/10 bg-white p-3">
+                  <p className="text-xs font-black uppercase text-ink">Impuesto verde (SII)</p>
+                  <p className="mt-1 text-xs font-semibold text-steel">Con marca, modelo, código CIT y precio de venta con IVA.</p>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <MoneyInput label="Precio venta c/IVA" value={state.salePriceWithVat} onChange={(value) => update("salePriceWithVat", value)} />
+                    <div className="grid min-w-0 content-start gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wide text-steel">Código CIT</span>
+                      <span className="truncate rounded-lg border border-graphite/10 bg-mist px-2.5 py-2 text-sm font-bold text-ink">
+                        {selectedVehicle?.citCode ?? "Pendiente"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{siiText}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                    <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultGreenTax} disabled={loadingGreenTax || !selectedVehicle?.citCode || !siiSalePrice}>
+                      {loadingGreenTax ? "Calculando..." : "Calcular"}
+                    </button>
+                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(siiText)}>
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      Copiar
+                    </button>
+                    <a className="btn btn-secondary px-3 py-2 text-xs" href="https://www4.sii.cl/calcImpVehiculoNuevoInternet/internet.html" target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                      SII
+                    </a>
+                  </div>
+                  {greenTaxStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{greenTaxStatus}</p> : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        {/* ---------- Resultado (siempre a la vista en pantalla grande) ---------- */}
+        <aside id="resultado-hoja" className="no-print grid min-w-0 content-start gap-3 lg:sticky lg:top-20">
+          <div className="panel rounded-lg p-4">
+            <p className="text-[11px] font-black uppercase tracking-wide text-copper">Resultado</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Indicador etiqueta="Precio de venta" valor={formatCLP(totals.saleTotal)} destacado />
+              <Indicador etiqueta="A pagar cliente" valor={formatCLP(totals.customerPayment)} />
+              <Indicador etiqueta="Margen total" valor={formatCLP(totals.totalMarginGross)} />
+              <Indicador etiqueta="Rentabilidad" valor={rentabilidadTexto} />
+            </div>
+
+            <details className="group mt-3 rounded-lg border border-graphite/10 bg-white" open>
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-black uppercase text-ink">
+                Desglose
+                <ChevronDown className="h-4 w-4 transition group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <div className="grid gap-1.5 px-3 pb-3">
+                <SummaryLine label="Lista final bruto" value={totals.priceListFinalGross} />
+                <SummaryLine label="Lista final neto" value={totals.priceListFinalNet} />
+                <SummaryLine label="Facturables bruto" value={totals.invoiceableGross} />
                 <SummaryLine label="No facturables" value={totals.nonInvoiceable} />
                 <SummaryLine label="Total ingresos" value={totals.totalIncome} />
                 <SummaryLine label="Total descuentos" value={totals.totalDiscounts} />
-                <SummaryLine label="Precio de venta" value={totals.saleTotal} strong />
-                <SummaryLine label="A pagar cliente" value={totals.customerPayment} />
+                <SummaryLine label="Margen vehículo" value={totals.vehicleMarginGross} />
+                <SummaryLine label="Margen total neto" value={totals.marginNet} />
               </div>
-            </div>
+            </details>
 
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Margenes</h3>
-              <div className="mt-4 grid gap-4">
-                <label className="grid gap-1.5">
-                  <span className="text-xs font-black uppercase text-steel">Margen unidad %</span>
-                  <input className="input" type="number" value={state.marginPercent} onChange={(event) => update("marginPercent", Number.parseFloat(event.target.value) || 0)} />
-                </label>
-                <MoneyInput label="Utilidad credito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
-                <div className="grid gap-3">
-                  <SummaryLine label="Margen vehiculo bruto" value={totals.vehicleMarginGross} />
-                  <SummaryLine label="Margen total bruto" value={totals.totalMarginGross} strong />
-                  <SummaryLine label="Margen total neto" value={totals.marginNet} />
-                  <SummaryLine label="Rentabilidad" value={`${(totals.marginRatio * 100).toFixed(2)}%`} />
-                </div>
-              </div>
-            </div>
-
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Porcentajes</h3>
-              <p className="mt-1 text-xs font-semibold text-steel">Todos salen de las cifras de esta hoja; ninguno se escribe a mano.</p>
-              <div className="mt-4 grid gap-3">
+            <details className="group mt-2 rounded-lg border border-graphite/10 bg-white">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-black uppercase text-ink">
+                Porcentajes
+                <ChevronDown className="h-4 w-4 transition group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <div className="grid gap-1.5 px-3 pb-3">
                 {filasPorcentajes.map((fila) => (
                   <SummaryLine key={fila.label} label={fila.label} value={fila.value} strong={fila.strong} />
                 ))}
               </div>
-            </div>
+            </details>
+          </div>
 
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-black text-ink">Lista de precios origen</h3>
-                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/historial-precios">
+          <ComparativoDerco
+            listaInterna={state.priceListGross || null}
+            conBonosInterno={totals.priceListFinalGross || null}
+            listaDerco={selectedVehicle?.dercoListPrice}
+            conBonosDerco={selectedVehicle?.dercoCampaignPrice}
+            actualizado={selectedVehicle?.dercoUpdatedAt}
+          />
+
+          <details className="group panel rounded-lg">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-black uppercase text-ink">
+              Lista de precios origen
+              <ChevronDown className="h-4 w-4 transition group-open:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="px-4 pb-4">
+              {preciosOrigen.length === 0 ? (
+                <p className="text-xs font-semibold text-steel">
+                  {selectedVehicle ? "Este vehículo no tiene precios cargados para el mes en uso." : "Elige un vehículo para ver de qué lista salen sus precios."}
+                </p>
+              ) : (
+                <ul className="grid gap-1.5">
+                  {preciosOrigen.map((precio, index) => (
+                    <li key={`origen-pantalla-${index}`} className="rounded-md bg-mist px-2.5 py-2 text-xs">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-black text-ink">{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</span>
+                        <span className="font-black tabular-nums text-ink">{formatCLP(precio.amount)}</span>
+                      </div>
+                      <p className="mt-0.5 font-semibold text-steel">
+                        {ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"} · {precio.hasIva ? "Neto (+IVA)" : "Con IVA"} · {fechaCorta(precio.effectiveFrom)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a className="btn btn-secondary px-2.5 py-1.5 text-xs" href="/historial-precios">
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                   Historial
                 </a>
-              </div>
-              {preciosOrigen.length === 0 ? (
-                <p className="mt-3 text-xs font-semibold text-steel">
-                  {selectedVehicle
-                    ? "Este vehiculo no tiene precios cargados para el mes en uso."
-                    : "Selecciona un vehiculo para ver de que lista salen sus precios."}
-                </p>
-              ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="data-table min-w-[420px]">
-                    <thead>
-                      <tr>
-                        <th>Precio</th>
-                        <th>Canal</th>
-                        <th>IVA</th>
-                        <th>Vigencia</th>
-                        <th>Estado</th>
-                        <th>Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preciosOrigen.map((precio, index) => (
-                        <tr key={`origen-pantalla-${index}`}>
-                          <td className="font-black text-ink">{ETIQUETA_PRECIO[precio.priceType] ?? precio.priceType}</td>
-                          <td>{ETIQUETA_CANAL[precio.channel ?? ""] ?? precio.channel ?? "-"}</td>
-                          <td>{precio.hasIva ? "Neto (+IVA)" : "Con IVA"}</td>
-                          <td>{fechaCorta(precio.effectiveFrom)}</td>
-                          <td>{precio.status ?? "-"}</td>
-                          <td className="font-black text-ink">{formatCLP(precio.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/actualizaciones">
-                  Ver listas cargadas
-                </a>
-                <a className="btn btn-secondary no-print px-2 py-1 text-xs" href="/cambios">
-                  Que cambio este mes
+                <a className="btn btn-secondary px-2.5 py-1.5 text-xs" href="/cambios">
+                  Qué cambió este mes
                 </a>
               </div>
             </div>
+          </details>
+        </aside>
+      </div>
 
-            <div className="print-avoid rounded-lg border border-graphite/10 bg-white p-4">
-              <h3 className="text-lg font-black text-ink">Impuesto verde SII</h3>
-              <div className="mt-4 grid gap-4">
-                <MoneyInput label="Precio venta con IVA" value={state.salePriceWithVat} onChange={(value) => update("salePriceWithVat", value)} />
-                <SummaryLine label="Marca" value={selectedVehicle?.brandName ?? "-"} />
-                <SummaryLine label="Modelo" value={selectedVehicle ? `${selectedVehicle.modelName} ${selectedVehicle.versionName}` : "-"} />
-                <SummaryLine label="Codigo CIT" value={selectedVehicle?.citCode ?? "Pendiente"} />
-                <button className="btn btn-primary no-print" type="button" onClick={consultGreenTax} disabled={loadingGreenTax || !selectedVehicle?.citCode || !siiSalePrice}>
-                  {loadingGreenTax ? "Calculando..." : "Calcular Imp. Fuentes Movs."}
-                </button>
-                {greenTaxStatus ? <p className="text-xs font-bold leading-5 text-steel">{greenTaxStatus}</p> : null}
-              </div>
-            </div>
+      {/* ---------- Barra fija del celular: el resultado siempre visible ---------- */}
+      <div className="barra-resultado-movil no-print fixed inset-x-0 bottom-0 z-30 border-t border-graphite/15 bg-white/95 px-4 py-2 shadow-[0_-8px_24px_rgba(17,24,39,0.08)] backdrop-blur lg:hidden">
+        <a href="#resultado-hoja" className="grid grid-cols-3 gap-2">
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] font-black uppercase text-steel">Venta</span>
+            <span className="block truncate text-sm font-black tabular-nums text-ink">{formatCLP(totals.saleTotal)}</span>
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] font-black uppercase text-steel">Margen</span>
+            <span className="block truncate text-sm font-black tabular-nums text-ink">{formatCLP(totals.totalMarginGross)}</span>
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] font-black uppercase text-steel">Rentab.</span>
+            <span className="block truncate text-sm font-black tabular-nums text-ink">{rentabilidadTexto}</span>
+          </span>
+        </a>
+      </div>
 
-            <label className="print-avoid grid gap-1.5 rounded-lg border border-graphite/10 bg-white p-4">
-              <span className="text-xs font-black uppercase text-steel">Notas internas</span>
-              <textarea className="input min-h-28" value={state.notes} onChange={(event) => update("notes", event.target.value)} />
-            </label>
-          </aside>
-        </div>
-
-        <div className="mt-5 hidden border-t border-graphite/10 pt-8 print:block">
-          <p className="text-sm font-semibold text-ink">Nombre y firma jefe sucursal:</p>
-          <div className="mt-10 h-px w-80 bg-graphite/40" />
-        </div>
-      </section>
-
+      {/* ---------- Hojas guardadas ---------- */}
       {!hideVehicleSelector ? (
-        <section className="panel no-print rounded-lg p-5">
+        <section className="panel no-print rounded-lg p-4 sm:p-5">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5 text-copper" aria-hidden="true" />
-            <h3 className="text-lg font-black text-ink">Hojas guardadas</h3>
+            <h3 className="text-base font-black text-ink">Hojas guardadas</h3>
             <span className="rounded-full bg-mist px-2 py-0.5 text-xs font-bold text-steel">{savedSheets.length}</span>
           </div>
           {savedSheets.length === 0 ? (
             <p className="mt-3 text-sm font-semibold text-steel">
-              Aun no hay hojas guardadas. Completa una hoja y presiona <strong>Guardar hoja</strong> para almacenarla y poder reabrirla despues.
+              Aún no hay hojas guardadas. Completa una y presiona <strong>Guardar</strong> para poder reabrirla después.
             </p>
           ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs font-black uppercase text-steel">
-                    <th className="pb-2 pr-3">Fecha</th>
-                    <th className="pb-2 pr-3">Vehiculo</th>
-                    <th className="pb-2 pr-3">Cliente</th>
-                    <th className="pb-2 pr-3 text-right">Precio venta</th>
-                    <th className="pb-2 pr-3 text-right">Margen</th>
-                    <th className="pb-2 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {savedSheets.map((sheet) => (
-                    <tr key={sheet.id} className="border-t border-graphite/10">
-                      <td className="py-2 pr-3 font-semibold text-steel">{new Date(sheet.createdAt).toLocaleDateString("es-CL")}</td>
-                      <td className="py-2 pr-3 font-bold text-ink">{sheet.vehicleLabel}</td>
-                      <td className="py-2 pr-3 font-semibold text-graphite">{sheet.customerName || "-"}</td>
-                      <td className="py-2 pr-3 text-right font-semibold text-graphite">{sheet.salePrice != null ? formatCLP(sheet.salePrice) : "-"}</td>
-                      <td className="py-2 pr-3 text-right font-semibold text-graphite">{sheet.marginTotal != null ? formatCLP(sheet.marginTotal) : "-"}</td>
-                      <td className="py-2 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => reopenSheet(sheet)}>
-                            <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
-                            Reabrir
-                          </button>
-                          <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => removeSheet(sheet.id)} aria-label="Eliminar hoja">
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
+            <>
+              {/* En el celular, tarjetas: una tabla de 6 columnas no cabe. */}
+              <ul className="mt-3 grid gap-2 md:hidden">
+                {savedSheets.map((sheet) => (
+                  <li key={sheet.id} className="rounded-lg border border-graphite/10 bg-white p-3">
+                    <p className="truncate text-sm font-black text-ink">{sheet.vehicleLabel}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-steel">
+                      {new Date(sheet.createdAt).toLocaleDateString("es-CL")} · {sheet.customerName || "Sin cliente"}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-graphite">
+                        {sheet.salePrice != null ? formatCLP(sheet.salePrice) : "-"} · margen{" "}
+                        {sheet.marginTotal != null ? formatCLP(sheet.marginTotal) : "-"}
+                      </span>
+                      <span className="flex gap-1.5">
+                        <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => reopenSheet(sheet)}>
+                          Reabrir
+                        </button>
+                        <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => removeSheet(sheet.id)} aria-label="Eliminar hoja">
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-4 hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-black uppercase text-steel">
+                      <th className="pb-2 pr-3">Fecha</th>
+                      <th className="pb-2 pr-3">Vehículo</th>
+                      <th className="pb-2 pr-3">Cliente</th>
+                      <th className="pb-2 pr-3 text-right">Precio venta</th>
+                      <th className="pb-2 pr-3 text-right">Margen</th>
+                      <th className="pb-2 text-right">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {savedSheets.map((sheet) => (
+                      <tr key={sheet.id} className="border-t border-graphite/10">
+                        <td className="py-2 pr-3 font-semibold text-steel">{new Date(sheet.createdAt).toLocaleDateString("es-CL")}</td>
+                        <td className="py-2 pr-3 font-bold text-ink">{sheet.vehicleLabel}</td>
+                        <td className="py-2 pr-3 font-semibold text-graphite">{sheet.customerName || "-"}</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-graphite">{sheet.salePrice != null ? formatCLP(sheet.salePrice) : "-"}</td>
+                        <td className="py-2 pr-3 text-right font-semibold text-graphite">{sheet.marginTotal != null ? formatCLP(sheet.marginTotal) : "-"}</td>
+                        <td className="py-2 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => reopenSheet(sheet)}>
+                              <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                              Reabrir
+                            </button>
+                            <button className="btn btn-secondary px-2 py-1 text-xs" type="button" onClick={() => removeSheet(sheet.id)} aria-label="Eliminar hoja">
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </section>
       ) : null}

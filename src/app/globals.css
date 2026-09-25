@@ -362,6 +362,88 @@ a {
   min-width: 0;
 }
 
+/* LA CAUSA REAL de que las pantallas "se fueran hacia la derecha": un
+   elemento de grid no puede achicarse por debajo de su contenido mas
+   largo (min-width: auto). Un selector con nombres de version largos, o
+   una fila de botones, obligaba a su bloque a ser mas ancho que la
+   pantalla, y todo el layout se corria. Con min-width: 0 cada bloque se
+   ajusta al ancho disponible y el contenido largo corta adentro. */
+.app-content-wrap main .grid > * {
+  min-width: 0;
+}
+
+/* Filas que se deslizan de lado (pestañas, filtros de marca): se pueden
+   deslizar con el dedo, pero sin la barra gris que en el celular se ve
+   como una linea suelta debajo. */
+.sin-barra {
+  scrollbar-width: none;
+}
+
+.sin-barra::-webkit-scrollbar {
+  display: none;
+}
+
+/* Los selectores muestran el nombre largo cortado dentro del campo, en
+   vez de estirar el campo. */
+.app-content-wrap main select.input {
+  text-overflow: ellipsis;
+}
+
+/* En el celular la hoja de rentabilidad tiene una barra fija abajo con
+   el resultado. El boton del Asistente IA flota en la misma esquina y la
+   tapaba: cuando la barra existe, el asistente sube por encima. */
+@media (max-width: 1023px) {
+  body:has(.barra-resultado-movil) .asistente-flotante {
+    bottom: 4.75rem;
+  }
+}
+
+/* ------------------------------------------------------------------
+   MODO OSCURO de los colores propios del sistema.
+   El sistema se pone oscuro solo si el celular esta en modo oscuro,
+   pero ink/graphite/steel/mist/bg-white no tenian version oscura: en un
+   telefono oscuro los titulos quedaban negro sobre negro. Solo en
+   pantalla: al imprimir se mantiene el papel blanco con tinta negra.
+   ------------------------------------------------------------------ */
+@media screen {
+  .dark .text-ink {
+    color: #f8fafc;
+  }
+  .dark .text-graphite {
+    color: #cbd5e1;
+  }
+  .dark .text-steel {
+    color: #94a3b8;
+  }
+  .dark .bg-white,
+  .dark .bg-white\/95,
+  .dark .bg-white\/70,
+  .dark .bg-white\/60 {
+    background-color: rgba(15, 23, 42, 0.92);
+  }
+  .dark .bg-mist {
+    background-color: rgba(148, 163, 184, 0.14);
+  }
+  .dark .hover\:bg-mist:hover {
+    background-color: rgba(148, 163, 184, 0.2);
+  }
+  .dark .bg-ink {
+    background-color: #334155;
+  }
+  .dark .border-graphite\/10,
+  .dark .border-graphite\/15,
+  .dark .border-graphite\/20 {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .dark .bg-amber-50\/60 {
+    background-color: rgba(245, 158, 11, 0.12);
+  }
+  .dark .text-amber-900,
+  .dark .text-amber-800 {
+    color: #fcd34d;
+  }
+}
+
 /* Los textos detectados vienen en una sola linea larguisima, sin
    espacios donde cortar. Sin esto estiran la tabla sin limite. */
 .app-content-wrap table td,
