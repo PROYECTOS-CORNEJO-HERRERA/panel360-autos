@@ -286,12 +286,30 @@ function TextInput({
 
 /** Un bloque de campos con titulo. Dos columnas incluso en el celular:
  *  un monto cabe de sobra en media pantalla, y la hoja queda la mitad
- *  de larga. */
-function Grupo({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+ *  de larga.
+ *
+ *  Cada bloque es una tarjeta cerrada y se corta entero: en pantalla
+ *  ancha van varios lado a lado, asi que TODA la hoja se ve de una vez
+ *  sin pestañas y sin bajar. El subtotal va en la cabecera del bloque,
+ *  que es donde el vendedor lo busca al ir llenando. */
+function Grupo({
+  titulo,
+  subtotal,
+  children
+}: {
+  titulo: string;
+  subtotal?: number;
+  children: React.ReactNode;
+}) {
   return (
-    <fieldset className="grid gap-2">
-      <legend className="mb-1 text-xs font-black uppercase text-ink">{titulo}</legend>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 xl:grid-cols-3">{children}</div>
+    <fieldset className="break-inside-avoid rounded-lg border border-graphite/15 bg-white p-3">
+      <legend className="flex w-full items-baseline justify-between gap-2 px-1">
+        <span className="text-xs font-black uppercase text-ink">{titulo}</span>
+        {subtotal !== undefined ? (
+          <span className="text-xs font-black tabular-nums text-copper">{formatCLP(subtotal)}</span>
+        ) : null}
+      </legend>
+      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-3">{children}</div>
     </fieldset>
   );
 }
@@ -312,8 +330,6 @@ function Indicador({ etiqueta, valor, destacado = false }: { etiqueta: string; v
 const CHIP =
   "shrink-0 rounded-full border border-graphite/20 px-3 py-1 text-xs font-bold text-graphite transition hover:bg-mist";
 const CHIP_ACTIVO = "shrink-0 rounded-full border border-teal-600 bg-teal-600 px-3 py-1 text-xs font-bold text-white";
-
-type Pestana = "venta" | "ingresos" | "descuentos" | "retoma" | "impuestos";
 
 function SummaryLine({ label, value, strong = false }: { label: string; value: number | string; strong?: boolean }) {
   return (
@@ -406,7 +422,6 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
   const [vehicleQuery, setVehicleQuery] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [saving, setSaving] = useState(false);
-  const [pestana, setPestana] = useState<Pestana>("venta");
 
   const selectedVehicle = vehicles.find((vehicle) => vehicle.id === state.selectedVersionId) ?? null;
 
@@ -815,23 +830,22 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
   // PANTALLA
   // ============================================================
   //
-  // Antes era una sola columna larguisima: en el celular habia que bajar
-  // por mas de 40 campos, cada uno con su etiqueta y una linea de ayuda
-  // repitiendo el monto, para recien ver el resultado al final.
+  // La hoja es UNA SOLA VISTA. Hubo un intento anterior de partirla en
+  // pestañas (Venta / Ingresos / Descuentos / Retoma / Impuestos) para
+  // acortarla en el celular, y fue un error: esta hoja se llena mirando
+  // el conjunto. El vendedor necesita ver el descuento mientras ajusta
+  // el precio, y la retoma mientras mira el margen. Con pestañas hay que
+  // ir y volver, y no se puede revisar la hoja completa de un vistazo
+  // antes de imprimirla, que es justo lo que se hace antes de pasarla a
+  // jefatura.
   //
-  // Ahora:
-  //  - los campos se agrupan en pestañas (una cosa a la vez),
+  // Lo que si resuelve el largo, sin esconder nada:
+  //  - cada grupo es una tarjeta que se corta entera, y en pantalla
+  //    ancha van dos o tres lado a lado (columnas, no un rollo),
   //  - los montos se escriben con separador de miles en el mismo campo,
   //    sin una segunda linea repitiendolos (la mitad de alto),
   //  - el resultado queda siempre a la vista: a la derecha en pantallas
   //    grandes, y en una barra fija abajo en el celular.
-  const pestanas: { clave: Pestana; etiqueta: string; monto?: number }[] = [
-    { clave: "venta", etiqueta: "Venta y cliente" },
-    { clave: "ingresos", etiqueta: "Ingresos", monto: totals.totalIncome },
-    { clave: "descuentos", etiqueta: "Descuentos", monto: totals.totalDiscounts },
-    { clave: "retoma", etiqueta: "Retoma y crédito" },
-    { clave: "impuestos", etiqueta: "Impuestos" },
-  ];
 
   const rentabilidadTexto = `${(totals.marginRatio * 100).toFixed(2)}%`;
 
@@ -931,174 +945,148 @@ export function ProfitabilitySheet({ vehicles, today, initialState, syncKey, hid
       {/* ---------- Formulario + resultado ---------- */}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="panel no-print min-w-0 rounded-lg p-3 sm:p-5">
-          <div className="sin-barra -mx-1 flex gap-1 overflow-x-auto px-1 pb-2" role="tablist" aria-label="Secciones de la hoja">
-            {pestanas.map((p) => (
-              <button
-                key={p.clave}
-                type="button"
-                role="tab"
-                aria-selected={pestana === p.clave}
-                onClick={() => setPestana(p.clave)}
-                className={
-                  pestana === p.clave
-                    ? "shrink-0 rounded-lg bg-ink px-3 py-2 text-left text-xs font-black text-white"
-                    : "shrink-0 rounded-lg border border-graphite/15 bg-white px-3 py-2 text-left text-xs font-bold text-graphite hover:bg-mist"
-                }
-              >
-                <span className="block whitespace-nowrap">{p.etiqueta}</span>
-                {p.monto !== undefined ? (
-                  <span className={pestana === p.clave ? "block text-[11px] font-semibold text-white/70" : "block text-[11px] font-semibold text-steel"}>
-                    {formatCLP(p.monto)}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-2" role="tabpanel">
-            {pestana === "venta" ? (
-              <div className="grid gap-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <TextInput label="Nota venta" value={state.orderNumber} onChange={(value) => update("orderNumber", value)} placeholder="Nro." />
-                  <TextInput label="Interno" value={state.internalNumber} onChange={(value) => update("internalNumber", value)} placeholder="Unidad" />
-                </div>
+          {/* Toda la hoja de una vez, en grilla por FILAS: se lee de
+              izquierda a derecha y de arriba abajo, en el mismo orden del
+              informe impreso. Se probo con columns-* (flujo por columna)
+              y quedaba en zigzag: "Retoma" aparecia arriba a la derecha,
+              antes que "Ingresos". Un hueco de relleno es mas barato que
+              un orden que no se puede seguir. */}
+          <div className="grid items-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            <Grupo titulo="Venta y cliente">
+              <TextInput label="Nota venta" value={state.orderNumber} onChange={(value) => update("orderNumber", value)} placeholder="Nro." />
+              <TextInput label="Interno" value={state.internalNumber} onChange={(value) => update("internalNumber", value)} placeholder="Unidad" />
+              <span className="col-span-2">
                 <TextInput label="Cliente" value={state.customerName} onChange={(value) => update("customerName", value)} placeholder="Nombre del cliente" />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <TextInput label="Correo cliente" type="email" value={state.customerEmail} onChange={(value) => update("customerEmail", value)} placeholder="correo@cliente.cl" />
-                  <TextInput label="Correo jefatura" type="email" value={state.jefaturaEmail} onChange={(value) => update("jefaturaEmail", value)} placeholder="jefatura@sergioescobar.cl" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <TextInput label="Fecha factura" type="date" value={state.invoiceDate} onChange={(value) => update("invoiceDate", value)} />
-                  <label className="grid min-w-0 gap-1">
-                    <span className="truncate text-[11px] font-black uppercase tracking-wide text-steel">Margen unidad %</span>
-                    <input
-                      className="input py-2 text-right text-sm font-bold"
-                      type="number"
-                      inputMode="decimal"
-                      value={state.marginPercent}
-                      onChange={(event) => update("marginPercent", Number.parseFloat(event.target.value) || 0)}
-                    />
-                  </label>
-                </div>
+              </span>
+              <span className="col-span-2">
+                <TextInput label="Correo cliente" type="email" value={state.customerEmail} onChange={(value) => update("customerEmail", value)} placeholder="correo@cliente.cl" />
+              </span>
+              <span className="col-span-2">
+                <TextInput label="Correo jefatura" type="email" value={state.jefaturaEmail} onChange={(value) => update("jefaturaEmail", value)} placeholder="jefatura@sergioescobar.cl" />
+              </span>
+              <TextInput label="Fecha factura" type="date" value={state.invoiceDate} onChange={(value) => update("invoiceDate", value)} />
+              <label className="grid min-w-0 gap-1">
+                <span className="truncate text-[11px] font-black uppercase tracking-wide text-steel">Margen unidad %</span>
+                <input
+                  className="input py-2 text-right text-sm font-bold"
+                  type="number"
+                  inputMode="decimal"
+                  value={state.marginPercent}
+                  onChange={(event) => update("marginPercent", Number.parseFloat(event.target.value) || 0)}
+                />
+              </label>
+            </Grupo>
+
+            <Grupo titulo="Precio del vehículo">
+              <MoneyInput label="Precio lista unidad" value={state.priceListGross} onChange={(value) => update("priceListGross", value)} />
+              <MoneyInput label="ZQDA bono marca" value={state.brandBonusGross} onChange={(value) => update("brandBonusGross", value)} />
+            </Grupo>
+
+            <Grupo titulo="Se suman (facturables)" subtotal={totals.invoiceableGross}>
+              <MoneyInput label="Flete" value={state.fleteOsorno} onChange={(value) => update("fleteOsorno", value)} />
+              <MoneyInput label="Pisos de goma" value={state.rubberFloor} onChange={(value) => update("rubberFloor", value)} />
+              <MoneyInput label="Set de seguridad" value={state.safetyKit} onChange={(value) => update("safetyKit", value)} />
+              <MoneyInput label="Trins" value={state.trins} onChange={(value) => update("trins", value)} />
+              <MoneyInput label="Accesorios (grabado)" value={state.accGrabado} onChange={(value) => update("accGrabado", value)} />
+              <MoneyInput label="Mantención" value={state.maintenance} onChange={(value) => update("maintenance", value)} />
+              <MoneyInput label="Intereses" value={state.interests} onChange={(value) => update("interests", value)} />
+              <MoneyInput label="Otros" value={state.others} onChange={(value) => update("others", value)} />
+            </Grupo>
+
+            <Grupo titulo="No facturables" subtotal={totals.nonInvoiceable}>
+              <MoneyInput label="Inscripción" value={state.registration} onChange={(value) => update("registration", value)} />
+              <MoneyInput label="Imp. fuentes móvs." value={state.greenTax} onChange={(value) => update("greenTax", value)} />
+              <MoneyInput label="Seguro obligatorio" value={state.soap} onChange={(value) => update("soap", value)} />
+              <MoneyInput label="Permiso circulación" value={state.circulationPermit} onChange={(value) => update("circulationPermit", value)} />
+            </Grupo>
+
+            <Grupo titulo="Descuentos" subtotal={totals.totalDiscounts}>
+              <MoneyInput label="ZQDV desct. S. Escobar" value={state.discountSergio} onChange={(value) => update("discountSergio", value)} />
+              <MoneyInput label="Z104 Amicar S. Escobar" value={state.amicarSergio} onChange={(value) => update("amicarSergio", value)} />
+              <MoneyInput label="Z127 Amicar marca" value={state.amicarMarca} onChange={(value) => update("amicarMarca", value)} />
+              <MoneyInput label="Z126 aporte adic. marca" value={state.aporteAdicMarca} onChange={(value) => update("aporteAdicMarca", value)} />
+              <MoneyInput label="Z124 aporte ptte. marca" value={state.aportePtteMarca} onChange={(value) => update("aportePtteMarca", value)} />
+            </Grupo>
+
+            <Grupo titulo="Retoma" subtotal={state.tradeInValue}>
+              <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
+              <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
+              <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
+              <MoneyInput label="Tasación" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
+              <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
+              <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
+            </Grupo>
+
+            <Grupo titulo="Crédito" subtotal={state.creditMargin}>
+              <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
+              <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
+              <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
+              <MoneyInput label="Margen crédito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
+            </Grupo>
+
+            <Grupo titulo="Notas internas">
+              <span className="col-span-2">
                 <label className="grid gap-1">
-                  <span className="text-[11px] font-black uppercase tracking-wide text-steel">Notas internas</span>
+                  <span className="text-[11px] font-black uppercase tracking-wide text-steel">Para jefatura</span>
                   <textarea className="input min-h-20 py-2 text-sm" value={state.notes} onChange={(event) => update("notes", event.target.value)} />
                 </label>
+              </span>
+            </Grupo>
+
+            {/* Las dos consultas externas. Van al final porque se usan una
+                vez por hoja, pero siguen en la misma vista: antes estaban
+                escondidas en su pestaña y nadie las encontraba. */}
+            <fieldset className="break-inside-avoid rounded-lg border border-graphite/15 bg-white p-3">
+              <legend className="px-1 text-xs font-black uppercase text-ink">Permiso de circulación</legend>
+              <p className="mt-1 text-[11px] font-semibold text-steel">Con el precio lista final neto y la fecha de factura.</p>
+              <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{lasCondesText}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultPermit} disabled={loadingPermit || !totals.priceListFinalNet}>
+                  {loadingPermit ? "Consultando..." : "Consultar"}
+                </button>
+                <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => estimatedPermit !== null && update("circulationPermit", estimatedPermit)} disabled={estimatedPermit === null}>
+                  Usar estimado
+                </button>
+                <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(lasCondesText)}>
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  Copiar
+                </button>
+                <a className="btn btn-secondary px-3 py-2 text-xs" href="https://www.lascondesonline.cl/Permisos%20Circulacion/asp/convalper.asp" target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  Las Condes
+                </a>
               </div>
-            ) : null}
+              {permitStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{permitStatus}</p> : null}
+            </fieldset>
 
-            {pestana === "ingresos" ? (
-              <div className="grid gap-4">
-                <Grupo titulo="Precio del vehículo">
-                  <MoneyInput label="Precio lista unidad" value={state.priceListGross} onChange={(value) => update("priceListGross", value)} />
-                  <MoneyInput label="ZQDA bono marca" value={state.brandBonusGross} onChange={(value) => update("brandBonusGross", value)} />
-                </Grupo>
-                <Grupo titulo="Se suman (facturables)">
-                  <MoneyInput label="Flete" value={state.fleteOsorno} onChange={(value) => update("fleteOsorno", value)} />
-                  <MoneyInput label="Pisos de goma" value={state.rubberFloor} onChange={(value) => update("rubberFloor", value)} />
-                  <MoneyInput label="Set de seguridad" value={state.safetyKit} onChange={(value) => update("safetyKit", value)} />
-                  <MoneyInput label="Trins" value={state.trins} onChange={(value) => update("trins", value)} />
-                  <MoneyInput label="Accesorios (grabado)" value={state.accGrabado} onChange={(value) => update("accGrabado", value)} />
-                  <MoneyInput label="Mantención" value={state.maintenance} onChange={(value) => update("maintenance", value)} />
-                  <MoneyInput label="Intereses" value={state.interests} onChange={(value) => update("interests", value)} />
-                  <MoneyInput label="Otros" value={state.others} onChange={(value) => update("others", value)} />
-                </Grupo>
-                <Grupo titulo="No facturables">
-                  <MoneyInput label="Inscripción" value={state.registration} onChange={(value) => update("registration", value)} />
-                  <MoneyInput label="Imp. fuentes móvs." value={state.greenTax} onChange={(value) => update("greenTax", value)} />
-                  <MoneyInput label="Seguro obligatorio" value={state.soap} onChange={(value) => update("soap", value)} />
-                  <MoneyInput label="Permiso circulación" value={state.circulationPermit} onChange={(value) => update("circulationPermit", value)} />
-                </Grupo>
-                <p className="text-[11px] font-semibold text-steel">
-                  El impuesto verde y el permiso se calculan en la pestaña <strong>Impuestos</strong>.
-                </p>
-              </div>
-            ) : null}
-
-            {pestana === "descuentos" ? (
-              <Grupo titulo="Descuentos">
-                <MoneyInput label="ZQDV desct. S. Escobar" value={state.discountSergio} onChange={(value) => update("discountSergio", value)} />
-                <MoneyInput label="Z104 Amicar S. Escobar" value={state.amicarSergio} onChange={(value) => update("amicarSergio", value)} />
-                <MoneyInput label="Z127 Amicar marca" value={state.amicarMarca} onChange={(value) => update("amicarMarca", value)} />
-                <MoneyInput label="Z126 aporte adic. marca" value={state.aporteAdicMarca} onChange={(value) => update("aporteAdicMarca", value)} />
-                <MoneyInput label="Z124 aporte ptte. marca" value={state.aportePtteMarca} onChange={(value) => update("aportePtteMarca", value)} />
-              </Grupo>
-            ) : null}
-
-            {pestana === "retoma" ? (
-              <div className="grid gap-4">
-                <Grupo titulo="Retoma">
-                  <TextInput label="Marca" value={state.tradeInBrand} onChange={(value) => update("tradeInBrand", value)} />
-                  <TextInput label="Modelo" value={state.tradeInModel} onChange={(value) => update("tradeInModel", value)} />
-                  <TextInput label="Patente" value={state.tradeInPlate} onChange={(value) => update("tradeInPlate", value)} />
-                  <MoneyInput label="Tasación" value={state.tradeInAppraisal} onChange={(value) => update("tradeInAppraisal", value)} />
-                  <MoneyInput label="Bono retoma" value={state.tradeInBonus} onChange={(value) => update("tradeInBonus", value)} />
-                  <MoneyInput label="Valor retoma" value={state.tradeInValue} onChange={(value) => update("tradeInValue", value)} />
-                </Grupo>
-                <Grupo titulo="Crédito">
-                  <MoneyInput label="Saldo precio" value={state.creditBalance} onChange={(value) => update("creditBalance", value)} />
-                  <MoneyInput label="Prepago sin 2%" value={state.creditPrepayment} onChange={(value) => update("creditPrepayment", value)} />
-                  <MoneyInput label="Spread" value={state.creditSpread} onChange={(value) => update("creditSpread", value)} />
-                  <MoneyInput label="Margen crédito" value={state.creditMargin} onChange={(value) => update("creditMargin", value)} />
-                </Grupo>
-              </div>
-            ) : null}
-
-            {pestana === "impuestos" ? (
-              <div className="grid gap-4">
-                <div className="rounded-lg border border-graphite/10 bg-white p-3">
-                  <p className="text-xs font-black uppercase text-ink">Permiso de circulación</p>
-                  <p className="mt-1 text-xs font-semibold text-steel">Con el precio lista final neto y la fecha de factura.</p>
-                  <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{lasCondesText}</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                    <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultPermit} disabled={loadingPermit || !totals.priceListFinalNet}>
-                      {loadingPermit ? "Consultando..." : "Consultar"}
-                    </button>
-                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => estimatedPermit !== null && update("circulationPermit", estimatedPermit)} disabled={estimatedPermit === null}>
-                      Usar estimado
-                    </button>
-                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(lasCondesText)}>
-                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                      Copiar
-                    </button>
-                    <a className="btn btn-secondary px-3 py-2 text-xs" href="https://www.lascondesonline.cl/Permisos%20Circulacion/asp/convalper.asp" target="_blank" rel="noreferrer">
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                      Las Condes
-                    </a>
-                  </div>
-                  {permitStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{permitStatus}</p> : null}
-                </div>
-
-                <div className="rounded-lg border border-graphite/10 bg-white p-3">
-                  <p className="text-xs font-black uppercase text-ink">Impuesto verde (SII)</p>
-                  <p className="mt-1 text-xs font-semibold text-steel">Con marca, modelo, código CIT y precio de venta con IVA.</p>
-                  <div className="mt-2 grid grid-cols-2 gap-3">
-                    <MoneyInput label="Precio venta c/IVA" value={state.salePriceWithVat} onChange={(value) => update("salePriceWithVat", value)} />
-                    <div className="grid min-w-0 content-start gap-1">
-                      <span className="text-[11px] font-black uppercase tracking-wide text-steel">Código CIT</span>
-                      <span className="truncate rounded-lg border border-graphite/10 bg-mist px-2.5 py-2 text-sm font-bold text-ink">
-                        {selectedVehicle?.citCode ?? "Pendiente"}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{siiText}</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                    <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultGreenTax} disabled={loadingGreenTax || !selectedVehicle?.citCode || !siiSalePrice}>
-                      {loadingGreenTax ? "Calculando..." : "Calcular"}
-                    </button>
-                    <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(siiText)}>
-                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                      Copiar
-                    </button>
-                    <a className="btn btn-secondary px-3 py-2 text-xs" href="https://www4.sii.cl/calcImpVehiculoNuevoInternet/internet.html" target="_blank" rel="noreferrer">
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                      SII
-                    </a>
-                  </div>
-                  {greenTaxStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{greenTaxStatus}</p> : null}
+            <fieldset className="break-inside-avoid rounded-lg border border-graphite/15 bg-white p-3">
+              <legend className="px-1 text-xs font-black uppercase text-ink">Impuesto verde (SII)</legend>
+              <p className="mt-1 text-[11px] font-semibold text-steel">Con marca, modelo, código CIT y precio de venta con IVA.</p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <MoneyInput label="Precio venta c/IVA" value={state.salePriceWithVat} onChange={(value) => update("salePriceWithVat", value)} />
+                <div className="grid min-w-0 content-start gap-1">
+                  <span className="text-[11px] font-black uppercase tracking-wide text-steel">Código CIT</span>
+                  <span className="truncate rounded-lg border border-graphite/10 bg-mist px-2.5 py-2 text-sm font-bold text-ink">
+                    {selectedVehicle?.citCode ?? "Pendiente"}
+                  </span>
                 </div>
               </div>
-            ) : null}
+              <p className="mt-2 break-words rounded-md bg-mist p-2 text-[11px] font-semibold text-graphite">{siiText}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button className="btn btn-primary px-3 py-2 text-xs" type="button" onClick={consultGreenTax} disabled={loadingGreenTax || !selectedVehicle?.citCode || !siiSalePrice}>
+                  {loadingGreenTax ? "Calculando..." : "Calcular"}
+                </button>
+                <button className="btn btn-secondary px-3 py-2 text-xs" type="button" onClick={() => copyText(siiText)}>
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  Copiar
+                </button>
+                <a className="btn btn-secondary col-span-2 px-3 py-2 text-xs" href="https://www4.sii.cl/calcImpVehiculoNuevoInternet/internet.html" target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  Abrir SII
+                </a>
+              </div>
+              {greenTaxStatus ? <p className="mt-2 rounded-md bg-mist p-2 text-xs font-bold text-graphite">{greenTaxStatus}</p> : null}
+            </fieldset>
           </div>
         </section>
 
