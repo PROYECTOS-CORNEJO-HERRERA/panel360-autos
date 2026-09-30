@@ -1,6 +1,6 @@
 import { CompareClient } from "@/components/compare-client";
 import { PageHeader } from "@/components/ui";
-import { mesesConPrecios, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { resolverMesEnUsoDesdeBase, wherePrecioDelMes } from "@/lib/precios";
 import { AvisoMes } from "@/components/aviso-mes";
 import { getCommercialAidAlerts } from "@/lib/commercial-aids";
 import { prisma } from "@/lib/prisma";
@@ -15,7 +15,7 @@ function selectedVersions(searchParams?: Record<string, string | string[] | unde
 
 export default async function ComparePage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
   // Bloque B: que mes se esta mostrando, y si hay que avisarlo.
-  const mesEnUso = resolverMesEnUso(await mesesConPrecios());
+  const mesEnUso = await resolverMesEnUsoDesdeBase();
 
   const [versions, commercialAidAlerts] = await Promise.all([
     prisma.version.findMany({

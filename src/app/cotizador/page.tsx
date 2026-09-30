@@ -3,7 +3,7 @@ import { EmptyState, Notice, PageHeader, Panel } from "@/components/ui";
 import { formatCLP } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
-import { mesesConPrecios, precioPorTipo, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { precioPorTipo, resolverMesEnUsoDesdeBase, wherePrecioDelMes } from "@/lib/precios";
 import { preciosDercoVigentes } from "@/lib/derco/estado";
 import { AvisoMes } from "@/components/aviso-mes";
 export const dynamic = "force-dynamic";
@@ -29,8 +29,7 @@ export default async function QuotePage({ searchParams }: { searchParams?: Recor
   // lista del mes en curso no se ha cargado, se muestra la ultima
   // disponible pero avisandolo en pantalla -- no se hace pasar por
   // vigente.
-  const meses = await mesesConPrecios();
-  const mesEnUso = resolverMesEnUso(meses);
+  const mesEnUso = await resolverMesEnUsoDesdeBase();
 
   const [versions, customers, quotes, dercoPorVersion] = await Promise.all([
     prisma.version.findMany({

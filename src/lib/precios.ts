@@ -91,8 +91,16 @@ export type MesEnUso = {
  * @param mesesConPrecios meses que tienen precios VIGENTE, de mas
  *        nuevo a mas antiguo (lo resuelve quien llama, con una
  *        consulta agrupada).
+ * @param opciones.hayPreciosSinMes true si existen precios VIGENTE cuyo
+ *        mesComercial es null. Sin este dato la funcion no puede
+ *        distinguir "no hay precios" de "hay precios sin mes asignado",
+ *        y anunciaba lo primero cuando era lo segundo. Ver abajo.
  */
-export function resolverMesEnUso(mesesConPrecios: string[], ahora = new Date()): MesEnUso {
+export function resolverMesEnUso(
+  mesesConPrecios: string[],
+  opciones: { hayPreciosSinMes?: boolean; ahora?: Date } = {}
+): MesEnUso {
+  const { hayPreciosSinMes = false, ahora = new Date() } = opciones;
   const mesActual = mesComercialActual(ahora);
 
   if (mesesConPrecios.includes(mesActual)) {
@@ -102,6 +110,31 @@ export function resolverMesEnUso(mesesConPrecios: string[], ahora = new Date()):
   const masReciente = [...mesesConPrecios].sort().reverse()[0];
 
   if (!masReciente) {
+    // OJO: aqui vivia un aviso que mentia.
+    //
+    // mesesConPrecios() descarta los precios con mesComercial null. En
+    // una base donde NINGUN precio tiene mes asignado (los cargados
+    // antes de que existiera el Bloque B) la lista llega vacia, y la
+    // pantalla anunciaba en rojo "No hay listas de precios cargadas en
+    // el sistema" mientras el cotizador, el comparador y la hoja de
+    // rentabilidad mostraban precios sin problema -- porque el filtro
+    // wherePrecioDelMes SI acepta los null.
+    //
+    // O sea: el sistema le decia al vendedor que no habia precios, con
+    // los precios en pantalla. Lo peor de los dos mundos: si les cree,
+    // no cotiza; si no les cree, aprende a ignorar los avisos.
+    //
+    // Ahora se distinguen los dos casos.
+    if (hayPreciosSinMes) {
+      return {
+        mes: mesActual,
+        mesActual,
+        esDesactualizado: false,
+        aviso:
+          "Los precios cargados no tienen mes comercial asignado, así que no se puede verificar a qué lista pertenecen. Se muestran igual — confirma la vigencia antes de comprometerlos con un cliente.",
+      };
+    }
+
     return {
       mes: mesActual,
       mesActual,
@@ -127,6 +160,28 @@ export async function mesesConPrecios(): Promise<string[]> {
     orderBy: { mesComercial: "desc" },
   });
   return filas.map((f) => f.mesComercial).filter((m): m is string => Boolean(m));
+}
+
+/**
+ * Estado completo de los meses: los que existen, y si ademas quedan
+ * precios vigentes SIN mes asignado.
+ *
+ * Las dos cosas se piden juntas porque decidir que mes mostrar sin
+ * saber lo segundo lleva al aviso equivocado (ver resolverMesEnUso).
+ */
+export async function estadoMesesPrecios() {
+  const [meses, sinMes] = await Promise.all([
+    mesesConPrecios(),
+    prisma.price.count({ where: { ...wherePrecioVigente, mesComercial: null } }),
+  ]);
+  return { meses, hayPreciosSinMes: sinMes > 0 };
+}
+
+/** Resuelve el mes en uso consultando la base. Es lo que deben usar las
+ *  pantallas: hace las dos consultas y las combina bien. */
+export async function resolverMesEnUsoDesdeBase(ahora = new Date()): Promise<MesEnUso> {
+  const { meses, hayPreciosSinMes } = await estadoMesesPrecios();
+  return resolverMesEnUso(meses, { hayPreciosSinMes, ahora });
 }
 
 /**

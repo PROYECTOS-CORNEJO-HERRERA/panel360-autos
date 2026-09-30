@@ -1,6 +1,6 @@
 import { ProfitabilitySheet } from "@/components/profitability-sheet";
 import { Notice, PageHeader } from "@/components/ui";
-import { mesesConPrecios, precioPorTipo, resolverMesEnUso, wherePrecioDelMes } from "@/lib/precios";
+import { precioPorTipo, resolverMesEnUsoDesdeBase, wherePrecioDelMes } from "@/lib/precios";
 import { preciosDercoVigentes } from "@/lib/derco/estado";
 import { AvisoMes } from "@/components/aviso-mes";
 import { prisma } from "@/lib/prisma";
@@ -15,7 +15,7 @@ function searchValue(value?: string | string[]) {
 
 export default async function ProfitabilityPage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
   // Bloque B: que mes se esta mostrando, y si hay que avisarlo.
-  const mesEnUso = resolverMesEnUso(await mesesConPrecios());
+  const mesEnUso = await resolverMesEnUsoDesdeBase();
 
   const versions = await prisma.version.findMany({
     include: {
