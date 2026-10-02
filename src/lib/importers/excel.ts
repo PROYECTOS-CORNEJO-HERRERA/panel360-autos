@@ -100,6 +100,17 @@ function hasAny(text: string, words: string[]): boolean {
   return words.some((w) => text.includes(w));
 }
 
+/**
+ * ¿El titulo de esta columna anuncia un CODIGO y no un nombre?
+ *
+ * "Codigo Modelo" calza con la busqueda de "modelo" porque la contiene,
+ * y asi Mazda metia "BHVVLAG" como nombre de modelo. El codigo tiene su
+ * propio lugar (SAP / CIT); como nombre no sirve para nada.
+ */
+export function esColumnaDeCodigo(clave: string): boolean {
+  return /\b(codigo|cod|code|sku|sap|cit)\b/.test(clave);
+}
+
 type RowGetter = (...candidates: string[]) => unknown;
 
 /**
@@ -187,22 +198,51 @@ function parseSheetPrecios(
 ): DetectedChange[] {
   const changes: DetectedChange[] = [];
 
+  // El modelo viene en una celda COMBINADA que abarca todas las
+  // versiones de ese modelo. Al leer la planilla, solo la primera fila
+  // del grupo trae el nombre y las siguientes llegan vacias:
+  //
+  //   CELERIO | CL310FGLX  | 1.0 GLX PLUS
+  //           | CL310FTGLX | 1.0 GLX PLUS AMT     <- sin modelo
+  //           | DZ312GL    | 1.2 GL               <- sin modelo
+  //
+  // Se leia fila por fila sin memoria, asi que todas menos la primera
+  // quedaban sin modelo y despues no calzaban con ninguna version del
+  // catalogo. Se arrastra el ultimo modelo visto, que es exactamente lo
+  // que significa la celda combinada.
+  let ultimoModelo = "";
+
   for (const row of rows) {
     const entries = Object.entries(row);
     const normalizedKeys = entries.map(([key]) => norm(key));
     const get = makeGetter(entries, normalizedKeys);
+    const getCon = makeGetterConClave(entries, normalizedKeys);
     const rawText = entries.map(([key, value]) => `${key}: ${valueToString(value)}`).join(" | ");
 
     // Una marca es un nombre. Si lo que salio es un numero o un
     // porcentaje, la columna elegida no era la marca: se descarta antes
     // de que contamine todo el resumen de la carga.
     const brandName = nombreValido(valueToString(get("marca", "brand", "fabricante"))) || detectedBrand || "";
-    const modelName = nombreValido(valueToString(get("modelo", "model", "linea")));
-    const versionName = nombreValido(valueToString(get("version", "variante", "trim", "descripcion sap")));
 
-    // Bloque C: se guarda de QUE columna salio el precio de lista, para
-    // poder deducir si viene neto o con IVA.
-    const getCon = makeGetterConClave(entries, normalizedKeys);
+    // Una columna llamada "Codigo Modelo" NO es el modelo: trae un
+    // codigo interno (Mazda manda "BHVVLAG"). Calzaba igual porque el
+    // titulo contiene la palabra "modelo", y el catalogo terminaba
+    // recibiendo un codigo como nombre de modelo, que no calza con nada.
+    const celdaModelo = getCon("modelo", "model", "linea");
+    const modeloPropio =
+      celdaModelo && !esColumnaDeCodigo(celdaModelo.clave)
+        ? nombreValido(valueToString(celdaModelo.valor))
+        : "";
+
+    if (modeloPropio) ultimoModelo = modeloPropio;
+    const modelName = modeloPropio || ultimoModelo;
+
+    // "descripcion" a secas es como Suzuki titula la version
+    // ("1.0 GLX PLUS AMT"). Faltaba en la lista y esas filas quedaban
+    // sin version.
+    const versionName = nombreValido(
+      valueToString(get("version", "variante", "trim", "descripcion sap", "descripcion"))
+    );
     const celdaLista = getCon("precio lista", "lista", "precio de lista", "precio base", "precio oficial", "precio", "list price");
     const priceList = montoDeCelda(celdaLista?.valor);
     const bonusAmount = montoDeCelda(get("bonos marca", "bono marca", "bono", "descuento marca"));

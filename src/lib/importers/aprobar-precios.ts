@@ -55,6 +55,26 @@ function leerPayload(json: string | null): PayloadPrecio {
   }
 }
 
+/**
+ * Normaliza el nombre de una version para compararlo.
+ *
+ * La unica diferencia entre "SUV 500 1.5L Comfort" (la lista) y
+ * "500 1.5 COMFORT" (el catalogo) era la L de litros. Con eso bastaba
+ * para que la fila quedara sin calzar y el precio no entrara.
+ *
+ * Se quita SOLO la L que sigue a una cilindrada: no distingue nada, es
+ * la unidad. La T de turbo se conserva a proposito -- "2.0T" y "2.0"
+ * son versiones distintas, y borrarla haria calzar dos autos que no son
+ * el mismo. Ese es justo el error caro: un precio en la version
+ * equivocada no lo ve nadie.
+ */
+export function normalizarVersion(texto: string): string {
+  return normalizeText(texto)
+    .replace(/(\d+[.,]\d+)\s*l(?![a-z])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Lo minimo del catalogo que hace falta para calzar una fila con una version. */
 export type CandidataVersion = {
   id: string;
@@ -117,7 +137,7 @@ export function calzarVersion(params: CriterioVersion, candidatas: CandidataVers
 
   const nBrand = brandName ? normalizeText(brandName) : null;
   const nModel = modelName ? normalizeText(modelName) : null;
-  const nVersion = versionName ? normalizeText(versionName) : null;
+  const nVersion = versionName ? normalizarVersion(versionName) : null;
 
   // Las listas escriben la version con el modelo y la carroceria
   // adelante: el catalogo la llama "C21 1.3" y el Excel dice "Cargo Box
@@ -140,28 +160,48 @@ export function calzarVersion(params: CriterioVersion, candidatas: CandidataVers
   }
 
   // 1) Nombre identico.
-  const exactas = mismoModelo.filter((v) => normalizeText(v.name) === nVersion);
+  const exactas = mismoModelo.filter((v) => normalizarVersion(v.name) === nVersion);
   if (exactas.length === 1) return { id: exactas[0].id };
   if (exactas.length > 1) return null;
 
-  // 2) El nombre del catalogo esta contenido en el del Excel ("c21 1.3"
-  //    dentro de "cargo box cs c21 1.3"), o al reves. Se toma la
-  //    coincidencia mas larga: entre "c21 1.3" y "c21 1.3 ac" gana la
-  //    que use mas del texto, que es la mas especifica.
-  const contenidas = mismoModelo.filter((v) => {
-    const n = normalizeText(v.name);
-    if (!n) return false;
-    return nVersion.includes(n) || n.includes(nVersion);
+  // 2) El nombre del catalogo esta contenido en el del Excel: "c21 1.3"
+  //    dentro de "cargo box cs c21 1.3". Aqui el Excel trae MAS
+  //    informacion que el catalogo, asi que entre "c21 1.3" y
+  //    "c21 1.3 ac" gana la mas larga: es la que usa mas del texto que
+  //    la lista si escribio.
+  const catalogoDentroDelExcel = mismoModelo.filter((v) => {
+    const n = normalizarVersion(v.name);
+    return n ? nVersion.includes(n) : false;
   });
 
-  if (contenidas.length === 1) return { id: contenidas[0].id };
+  if (catalogoDentroDelExcel.length === 1) return { id: catalogoDentroDelExcel[0].id };
 
-  if (contenidas.length > 1) {
-    const ordenadas = [...contenidas].sort((a, b) => normalizeText(b.name).length - normalizeText(a.name).length);
-    const largo = normalizeText(ordenadas[0].name).length;
-    const empatadas = ordenadas.filter((v) => normalizeText(v.name).length === largo);
+  if (catalogoDentroDelExcel.length > 1) {
+    const ordenadas = [...catalogoDentroDelExcel].sort(
+      (a, b) => normalizarVersion(b.name).length - normalizarVersion(a.name).length
+    );
+    const largo = normalizarVersion(ordenadas[0].name).length;
+    const empatadas = ordenadas.filter((v) => normalizarVersion(v.name).length === largo);
     return empatadas.length === 1 ? { id: empatadas[0].id } : null;
   }
+
+  // 3) Al reves: el Excel dice menos que el catalogo ("500 1.5" cuando
+  //    el catalogo tiene COMFORT, LUXURY y LUXURY CVT).
+  //
+  //    Aqui NO se puede aplicar la regla de la mas larga. Antes se
+  //    aplicaba, y como las tres contienen "500 1.5", ganaba
+  //    "500 1.5 LUXURY CVT" por ser la de nombre mas largo: un nombre
+  //    vago terminaba eligiendo, en silencio, la version mas equipada.
+  //    El precio quedaba cargado en el auto equivocado y nadie lo veia.
+  //
+  //    Cuando el que tiene menos informacion es el Excel, la unica
+  //    salida honesta es exigir que haya UNA sola candidata.
+  const excelDentroDelCatalogo = mismoModelo.filter((v) => {
+    const n = normalizarVersion(v.name);
+    return n ? n.includes(nVersion) : false;
+  });
+
+  if (excelDentroDelCatalogo.length === 1) return { id: excelDentroDelCatalogo[0].id };
 
   return null;
 }
