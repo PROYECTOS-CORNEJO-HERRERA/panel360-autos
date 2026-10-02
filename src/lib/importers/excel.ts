@@ -40,11 +40,47 @@ function valueToString(value: unknown): string {
   return String(value).trim();
 }
 
-function moneyFromCell(value: unknown): number | undefined {
-  if (typeof value === "number" && value > 0) return Math.round(value);
-  const cleaned = valueToString(value).replace(/[^\d]/g, "");
-  const n = Number.parseInt(cleaned, 10);
-  return n > 0 ? n : undefined;
+// Tope de cordura para un monto en pesos. El vehiculo mas caro del
+// catalogo no llega a 200 millones; 2.000 millones deja margen de sobra
+// y ademas queda por debajo del maximo de la columna INT (2.147.483.647),
+// que es lo que de verdad importa: un numero mas grande SI se escribe en
+// SQLite, pero despues Prisma no puede leerlo y revienta la consulta
+// entera -- no solo esa fila. Una sola celda mal leida dejaba la pantalla
+// de Actualizaciones sin abrir.
+const MONTO_MAXIMO = 2_000_000_000;
+
+// Piso de cordura. Todo lo que este importador lee en pesos -- precios,
+// bonos, aportes, patentes -- esta en el orden de cientos de miles o
+// millones. Por debajo de mil pesos no hay montos reales, hay celdas que
+// no eran montos: porcentajes (0,85), factores de IVA (1,19), contadores.
+// Sin este piso, cortar la parte decimal de "1,1764705882352942" dejaba
+// un monto de $1, que es basura con cara de dato.
+const MONTO_MINIMO = 1000;
+
+export function montoDeCelda(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return undefined;
+    const redondeado = Math.round(value);
+    return redondeado >= MONTO_MINIMO && redondeado <= MONTO_MAXIMO ? redondeado : undefined;
+  }
+
+  const texto = valueToString(value).trim();
+  if (!texto) return undefined;
+
+  // Antes aqui se borraba TODO lo que no fuera digito. Con "12.990.000"
+  // funciona, pero con un decimal pega las dos partes: "1,1764705882352942"
+  // se volvia 11764705882352942. Esas celdas existen de verdad en las
+  // listas (porcentajes, factores de IVA), y cada una metia un monto
+  // absurdo en la base.
+  //
+  // Ahora la parte decimal se corta en vez de concatenarse. En Chile la
+  // coma es el separador decimal; el punto separa miles y se elimina.
+  const soloNumero = texto.replace(/[^\d,.-]/g, "");
+  const parteEntera = soloNumero.split(",")[0].replace(/\./g, "");
+  const n = Number.parseInt(parteEntera, 10);
+
+  if (!Number.isFinite(n) || n < MONTO_MINIMO || n > MONTO_MAXIMO) return undefined;
+  return n;
 }
 
 function norm(text: unknown): string {
@@ -168,13 +204,13 @@ function parseSheetPrecios(
     // poder deducir si viene neto o con IVA.
     const getCon = makeGetterConClave(entries, normalizedKeys);
     const celdaLista = getCon("precio lista", "lista", "precio de lista", "precio base", "precio oficial", "precio", "list price");
-    const priceList = moneyFromCell(celdaLista?.valor);
-    const bonusAmount = moneyFromCell(get("bonos marca", "bono marca", "bono", "descuento marca"));
+    const priceList = montoDeCelda(celdaLista?.valor);
+    const bonusAmount = montoDeCelda(get("bonos marca", "bono marca", "bono", "descuento marca"));
     const bonusName = valueToString(get("nombre bono", "tipo bono")) || (bonusAmount ? "Bono marca" : undefined);
 
-    const cash = moneyFromCell(get("precio contado", "contado", "precio con bono", "p. contado", "precio neto contado"));
-    const financing = moneyFromCell(get("precio financiamiento", "financiamiento", "precio credito", "p. credito", "precio con bono financiamiento"));
-    const bonusFinancing = moneyFromCell(get("bono financiamiento", "bono credito"));
+    const cash = montoDeCelda(get("precio contado", "contado", "precio con bono", "p. contado", "precio neto contado"));
+    const financing = montoDeCelda(get("precio financiamiento", "financiamiento", "precio credito", "p. credito", "precio con bono financiamiento"));
+    const bonusFinancing = montoDeCelda(get("bono financiamiento", "bono credito"));
     const rate = valueToString(get("tasa", "tasa especial", "tasa subvencionada", "tasas subvencionadas"));
     const promoText = valueToString(get("promociones", "campana", "beneficio adicional"));
 
@@ -309,8 +345,8 @@ function parseSheetPatenteGratis(
     const rawText = entries.map(([key, value]) => `${key}: ${valueToString(value)}`).join(" | ");
 
     const modelVersionRaw = valueToString(get("modelo", "modelo - version", "modelo-version", "version"));
-    const amountCash = moneyFromCell(get("patente contado", "contado", "cash"));
-    const amountCredit = moneyFromCell(get("patente credito", "credito"));
+    const amountCash = montoDeCelda(get("patente contado", "contado", "cash"));
+    const amountCredit = montoDeCelda(get("patente credito", "credito"));
 
     if (!amountCash && !amountCredit) {
       const texts = entries.map(([, v]) => valueToString(v)).filter(Boolean).join(" ");
@@ -360,17 +396,17 @@ function parseSheetBonoCierre(
 
     const modelName = valueToString(get("modelo", "model"));
     const versionName = valueToString(get("version", "versiones", "aplica a"));
-    const aporteCESCash = moneyFromCell(get("aporte ces", "ces contado", "aporte concesionario"));
-    const aporteMarcaCash = moneyFromCell(get("aporte marca", "marca contado", "aporte fabricante"));
-    const totalCash = moneyFromCell(get("aporte total", "total contado", "total"));
+    const aporteCESCash = montoDeCelda(get("aporte ces", "ces contado", "aporte concesionario"));
+    const aporteMarcaCash = montoDeCelda(get("aporte marca", "marca contado", "aporte fabricante"));
+    const totalCash = montoDeCelda(get("aporte total", "total contado", "total"));
 
     // Detectar segunda columna de CES/Marca para credito
     const cesIndices = normalizedKeys.reduce<number[]>((acc, k, i) => { if (k.includes("ces")) acc.push(i); return acc; }, []);
     const marcaIndices = normalizedKeys.reduce<number[]>((acc, k, i) => { if (k.includes("aporte") && !k.includes("ces") && !k.includes("total")) acc.push(i); return acc; }, []);
 
-    const aporteCESCredit = cesIndices[1] !== undefined ? moneyFromCell(entries[cesIndices[1]][1]) : undefined;
-    const aporteMarcaCredit = marcaIndices[1] !== undefined ? moneyFromCell(entries[marcaIndices[1]][1]) : undefined;
-    const totalCredit = moneyFromCell(get("negocios credito", "credito total"));
+    const aporteCESCredit = cesIndices[1] !== undefined ? montoDeCelda(entries[cesIndices[1]][1]) : undefined;
+    const aporteMarcaCredit = marcaIndices[1] !== undefined ? montoDeCelda(entries[marcaIndices[1]][1]) : undefined;
+    const totalCredit = montoDeCelda(get("negocios credito", "credito total"));
 
     if (!modelName || (!aporteCESCash && !aporteMarcaCash && !totalCash)) continue;
 
@@ -419,7 +455,7 @@ function parseSheetCampana(
     const modelName = valueToString(get("modelo", "model", "vehiculo", "auto"));
     const versionName = valueToString(get("version"));
     const benefitText = valueToString(get("beneficio", "campana", "premio", "giftcard", "descripcion", "detalle"));
-    const amount = moneyFromCell(get("monto", "valor", "amount", "precio"));
+    const amount = montoDeCelda(get("monto", "valor", "amount", "precio"));
 
     if (!benefitText && !amount) continue;
 
