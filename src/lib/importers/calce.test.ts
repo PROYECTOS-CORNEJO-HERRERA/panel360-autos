@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calzarVersion, normalizarVersion, type CandidataVersion } from "@/lib/importers/aprobar-precios";
+import { calzarVersion, normalizarVersion, transmisionDe, type CandidataVersion } from "@/lib/importers/aprobar-precios";
 
 const catalogo: CandidataVersion[] = [
   { id: "dfsk-comfort", name: "500 1.5 COMFORT", sapCode: null, brand: { name: "DFSK" }, model: { name: "SUV 500" } },
@@ -43,5 +43,46 @@ describe("calzarVersion", () => {
   it("devuelve null si hay mas de una candidata posible", () => {
     const r = calzarVersion({ brandName: "DFSK", modelName: "SUV 500", versionName: "500 1.5" }, catalogo);
     expect(r).toBeNull();
+  });
+});
+
+describe("transmisionDe", () => {
+  it("lee la caja aunque este en otro orden", () => {
+    expect(transmisionDe("1.2 CVT GL")).toBe("CVT");
+    expect(transmisionDe("GL CVT")).toBe("CVT");
+  });
+
+  it("no confunde AMT con AT ni con CVT", () => {
+    expect(transmisionDe("1.0 GLX PLUS AMT")).toBe("AMT");
+    expect(transmisionDe("1.5 AT GLX")).toBe("AT");
+  });
+
+  // Suzuki lo confirma en su codigo: DZ312GL manual, DZ312TGL CVT.
+  it("sin mencion explicita asume manual", () => {
+    expect(transmisionDe("1.2 GL")).toBe("MT");
+    expect(transmisionDe("GL MT")).toBe("MT");
+  });
+});
+
+describe("calce por equipamiento y caja", () => {
+  const suzuki: CandidataVersion[] = [
+    { id: "gl-mt", name: "GL MT", sapCode: null, brand: { name: "SUZUKI" }, model: { name: "Dzire Hybrid" } },
+    { id: "gl-cvt", name: "GL CVT", sapCode: null, brand: { name: "SUZUKI" }, model: { name: "Dzire Hybrid" } },
+    { id: "glx-mt", name: "GLX MT", sapCode: null, brand: { name: "SUZUKI" }, model: { name: "Dzire Hybrid" } },
+    { id: "glx-cvt", name: "GLX CVT", sapCode: null, brand: { name: "SUZUKI" }, model: { name: "Dzire Hybrid" } },
+  ];
+
+  // Este es el caso que dejaba los cuatro con el mismo CIT.
+  it("separa las cuatro versiones que antes se confundian", () => {
+    const caso = (v: string) =>
+      calzarVersion({ brandName: "SUZUKI", modelName: "DZIRE HYBRID", versionName: v }, suzuki)?.id;
+    expect(caso("1.2 GL")).toBe("gl-mt");
+    expect(caso("1.2 CVT GL")).toBe("gl-cvt");
+    expect(caso("1.2 GLX")).toBe("glx-mt");
+    expect(caso("1.2 CVT GLX")).toBe("glx-cvt");
+  });
+
+  it("no inventa un calce si el equipamiento no se reconoce", () => {
+    expect(calzarVersion({ brandName: "SUZUKI", modelName: "DZIRE HYBRID", versionName: "1.2" }, suzuki)).toBeNull();
   });
 });

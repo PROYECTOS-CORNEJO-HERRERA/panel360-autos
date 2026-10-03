@@ -68,6 +68,84 @@ function leerPayload(json: string | null): PayloadPrecio {
  * el mismo. Ese es justo el error caro: un precio en la version
  * equivocada no lo ve nadie.
  */
+// La caja de cambios, leida del nombre de la version.
+//
+// Hace falta porque la lista y el catalogo escriben lo mismo en distinto
+// orden: la planilla dice "1.2 CVT GL" y el catalogo "GL CVT". Comparar
+// texto no las junta, pero separar trim y caja si.
+//
+// El orden importa: CVT, AMT y DCT se buscan ANTES que AT, porque son
+// cajas distintas y no deben confundirse entre si.
+const TRANSMISIONES: [RegExp, string][] = [
+  [/\bcvt\b/, "CVT"],
+  [/\bamt\b/, "AMT"],
+  [/\bdct\b/, "DCT"],
+  [/\b(at|automatic[oa])\b/, "AT"],
+  [/\b(mt|manual)\b/, "MT"],
+];
+
+/**
+ * Sin mencion explicita se asume MANUAL. No es un capricho: en estas
+ * listas la caja automatica SIEMPRE se nombra (es lo que encarece el
+ * auto) y la manual se da por supuesta. Suzuki lo confirma en su propio
+ * codigo de version: DZ312GL es manual y DZ312TGL es CVT -- la T marca
+ * la automatica y su ausencia, la manual.
+ */
+export function transmisionDe(texto: string): string {
+  const t = normalizeText(texto);
+  for (const [patron, nombre] of TRANSMISIONES) {
+    if (patron.test(t)) return nombre;
+  }
+  return "MT";
+}
+
+/** Niveles de equipamiento, del mas largo al mas corto: "glx plus" tiene
+ *  que ganarle a "glx", o toda version PLUS se confundiria con la base. */
+const TRIMS = [
+  "glx plus", "gl plus", "gls plus",
+  "elite sport", "luxury cvt",
+  "comfort", "luxury", "elite", "premium", "signature", "deluxe", "active", "core", "entry",
+  "glx", "gls", "gl",
+];
+
+/** El nivel de equipamiento que nombra esta version, si se reconoce.
+ *
+ *  La caja se saca del texto ANTES de buscar el trim, porque a veces
+ *  viene metida en medio: el catalogo dice "GLX AMT PLUS" y la planilla
+ *  "GLX PLUS AMT". Son el mismo auto, pero buscando "glx plus" sobre el
+ *  texto crudo solo calza el segundo. */
+export function trimDe(texto: string): string | null {
+  let t = normalizeText(texto);
+  for (const [patron] of TRANSMISIONES) t = t.replace(patron, " ");
+  t = t.replace(/\s+/g, " ").trim();
+  for (const trim of TRIMS) {
+    if (new RegExp(`\\b${trim}\\b`).test(t)) return trim;
+  }
+  return null;
+}
+
+/**
+ * ¿Son el mismo modelo, aunque no se escriban igual?
+ *
+ * La planilla antepone "NEW" a los modelos recien renovados ("NEW SWIFT
+ * HYBRID") y el catalogo no ("Swift Hybrid"). Con comparacion exacta,
+ * ninguna fila de esos modelos calzaba -- y son justo los que mas se
+ * venden. Tambien sobran sufijos de carroceria ("3P", "5P").
+ */
+function mismoNombreDeModelo(catalogo: string, buscado: string): boolean {
+  const limpiar = (s: string) =>
+    normalizeText(s)
+      .replace(/\b(new|nuevo|nueva)\b/g, " ")
+      .replace(/\b[35]p\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const a = limpiar(catalogo);
+  const b = limpiar(buscado);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 export function normalizarVersion(texto: string): string {
   return normalizeText(texto)
     .replace(/(\d+[.,]\d+)\s*l(?![a-z])/g, "$1")
@@ -149,11 +227,25 @@ export function calzarVersion(params: CriterioVersion, candidatas: CandidataVers
   // en todas se exige que el resultado sea UNICO. Si hay dos candidatas
   // se prefiere no elegir: un precio en la version equivocada es un
   // error que nadie ve.
-  const mismoModelo = candidatas.filter((v) => {
+  const delModelo = candidatas.filter((v) => {
     if (nBrand && normalizeText(v.brand.name) !== nBrand) return false;
-    if (nModel && normalizeText(v.model.name) !== nModel) return false;
+    if (nModel && !mismoNombreDeModelo(v.model.name, nModel)) return false;
     return true;
   });
+
+  // La caja de cambios se descarta ANTES de comparar nombres, no despues.
+  //
+  // El caso que lo obligo: el catalogo tiene "GLX PLUS" (manual) y
+  // "GLX AMT PLUS". La planilla dice "1.0 GLX PLUS AMT", y el pase por
+  // contencion encontraba "glx plus" dentro de ese texto y lo daba por
+  // unico -- asignaba la version MANUAL a la fila de la automatica, sin
+  // mirar el AMT que estaba escrito ahi mismo.
+  //
+  // El filtro solo se aplica si deja candidatas: hay catalogos que no
+  // nombran la caja, y en esos no debe vaciar la busqueda.
+  const cajaBuscada = nVersion ? transmisionDe(nVersion) : null;
+  const porCaja = cajaBuscada ? delModelo.filter((v) => transmisionDe(v.name) === cajaBuscada) : [];
+  const mismoModelo = porCaja.length > 0 ? porCaja : delModelo;
 
   if (!nVersion) {
     return mismoModelo.length === 1 ? { id: mismoModelo[0].id } : null;
@@ -202,6 +294,25 @@ export function calzarVersion(params: CriterioVersion, candidatas: CandidataVers
   });
 
   if (excelDentroDelCatalogo.length === 1) return { id: excelDentroDelCatalogo[0].id };
+
+  // 4) Por equipamiento y caja de cambios.
+  //
+  //    Las dos pasadas anteriores comparan texto, y el texto no calza
+  //    cuando cada fuente ordena lo mismo distinto: la planilla escribe
+  //    "1.2 CVT GL" y el catalogo "GL CVT". Son el mismo auto y ninguna
+  //    contiene a la otra.
+  //
+  //    Esto es lo que hacia que los CIT quedaran mal: al no distinguir
+  //    la caja, las cuatro versiones de un modelo (GL MT, GL CVT,
+  //    GLX MT, GLX CVT) terminaban con el mismo codigo, cuando la
+  //    planilla trae uno para las manuales y otro para las automaticas.
+  //
+  //    Se sigue exigiendo que el resultado sea UNICO.
+  const trimBuscado = trimDe(nVersion);
+  if (trimBuscado) {
+    const porTrimYCaja = mismoModelo.filter((v) => trimDe(v.name) === trimBuscado);
+    if (porTrimYCaja.length === 1) return { id: porTrimYCaja[0].id };
+  }
 
   return null;
 }
