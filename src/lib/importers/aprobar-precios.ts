@@ -381,9 +381,22 @@ async function aprobarItemCargado(
     });
   }
 
-  // El mes sale del documento; si no se pudo leer, el del mes en curso.
+  // El mes sale del documento. Si NO se pudo leer, queda sin mes.
+  //
+  // Antes caia en mesComercialActual(), y eso convertia un "no se" en
+  // una afirmacion falsa: la lista de Suzuki de septiembre se cargo un
+  // 4 de octubre, su titulo trae la fecha pegada ("20260901") que el
+  // lector no reconocia, y los 25 precios quedaron archivados como
+  // OCTUBRE. El sistema pasaba a creer que la lista de octubre estaba
+  // cargada cuando no existia -- justo el engaño que el Bloque B
+  // existe para evitar.
+  //
+  // Sin mes, los filtros lo siguen mostrando (aceptan null como red de
+  // seguridad) y el aviso de pantalla dice que no se pudo verificar a
+  // que lista pertenece. Eso es la verdad y se puede corregir; un mes
+  // inventado no se nota.
   const mesComercial =
-    interpretarMesComercial(item.update.title) ?? interpretarMesComercial(item.rawText) ?? mesComercialActual();
+    interpretarMesComercial(item.update.title) ?? interpretarMesComercial(item.rawText) ?? null;
 
   const precio = await prisma.$transaction(async (tx) => {
     // El anterior del mismo tipo/canal pasa a REEMPLAZADO. No se borra:

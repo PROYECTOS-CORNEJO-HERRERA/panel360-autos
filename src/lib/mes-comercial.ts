@@ -78,6 +78,13 @@ export function interpretarMesComercial(texto: string | null | undefined, anioPo
   const invertido = limpio.match(/\b(0?[1-9]|1[0-2])[-/](20\d{2})\b/);
   if (invertido) return `${invertido[2]}-${String(Number(invertido[1])).padStart(2, "0")}`;
 
+  // "20260901" -- fecha compacta AAAAMMDD, como la escribe Suzuki en el
+  // nombre de sus listas ("Lista 09 20260901 lista de precio Septiembre").
+  // Sin esto el año quedaba sin reconocer (los cuatro digitos no estan
+  // aislados) y toda la lista se archivaba en el mes equivocado.
+  const compacta = limpio.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+  if (compacta) return `${compacta[1]}-${compacta[2]}`;
+
   // "agosto 2026" / "agosto de 2026" / solo "agosto"
   for (let i = 0; i < NOMBRES_MES.length; i++) {
     if (!limpio.includes(NOMBRES_MES[i])) continue;
